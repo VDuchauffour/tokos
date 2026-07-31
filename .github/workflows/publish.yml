@@ -22,7 +22,7 @@ jobs:
       - name: Cache cargo registry and build
         uses: Swatinem/rust-cache@v2
       - name: Install just
-        run: cargo install just
+        uses: extractions/setup-just@v3
       - name: Build project
         run: just release
       - name: Log in to crates.io
