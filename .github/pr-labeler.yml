@@ -1,0 +1,32 @@
+enhancement:
+  - features/*
+  - feature/*
+  - feat/*
+  - features-*
+  - feature-*
+  - feat-*
+bug:
+  - fixes/*
+  - fix/*
+  - bugs/*
+  - bug/*
+  - fixes-*
+  - fix-*
+  - bugs-*
+  - bug-*
+chore:
+  - chore/*
+  - chore-*
+dependencies:
+  - dependencies/*
+  - dependencies-*
+  - renovate/*
+  - renovate-*
+  - update/*
+  - update-*
+  - bump/*
+  - bump-*
+  - deps/*
+  - deps-*
+  - dep/*
+  - dep-*

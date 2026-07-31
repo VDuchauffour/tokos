@@ -1,0 +1,62 @@
+name: PR enhancement
+
+on:
+  pull_request:
+    types:
+      - edited
+      - opened
+      - reopened
+      - synchronize
+
+jobs:
+  pr-labeler-with-branches:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: TimonVS/pr-labeler-action@v5
+        with:
+          repo-token: ${{ github.token }}
+  pr-labeler-with-paths:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: release-drafter/release-drafter@v7
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+  pr-title-validator:
+    permissions:
+      pull-requests: read
+    runs-on: ubuntu-latest
+    name: Validate PR Title
+    steps:
+      - name: Check PR title follows conventional commits
+        uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+$
+          validateSingleCommit: true
+          ignoreLabels: |
+            dependencies
+  all-checks-passed:
+    needs:
+      - pr-labeler-with-branches
+      - pr-labeler-with-paths
+      - pr-title-validator
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        run: |-
+          if [[ "${{ needs.pr-labeler-with-branches.result }}" != "success" ]] || \
+             [[ "${{ needs.pr-labeler-with-paths.result }}" != "success" ]] || \
+             [[ "${{ needs.pr-title-validator.result }}" != "success" ]]; then
+            echo "❌ One or more checks failed"
+            exit 1
+          fi
+          echo "✅ All checks passed"

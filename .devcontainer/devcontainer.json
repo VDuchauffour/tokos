@@ -1,0 +1,43 @@
+{
+  "name": "tokos",
+  "image": "mcr.microsoft.com/devcontainers/rust:1-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12",
+      "installTools": true
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "remoteEnv": {
+    "CARGO_TARGET_DIR": "${containerWorkspaceFolder}/target"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "vivaxy.vscode-conventional-commits",
+        "esbenp.prettier-vscode",
+        "redhat.vscode-yaml",
+        "tamasfe.even-better-toml"
+      ],
+      "settings": {
+        "rust-analyzer.checkOnSave": true,
+        "rust-analyzer.server.extraEnv": {
+          "CARGO_TARGET_DIR": "target/rust-analyzer"
+        },
+        "files.exclude": {
+          "**/.git": true,
+          "**/.coverage": true,
+          "**/htmlcov": true,
+          "target": true,
+          "build": true,
+          "coverage.xml": true,
+          "node_modules": true
+        }
+      }
+    }
+  }
+}
