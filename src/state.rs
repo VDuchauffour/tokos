@@ -598,7 +598,7 @@ mod tests {
             ..Histogram::new()
         };
         let q = histogram_quantile(&prev, &cur, 0.5);
-        assert!(q >= 2.0 && q <= 5.0);
+        assert!((2.0..=5.0).contains(&q));
     }
 
     #[test]

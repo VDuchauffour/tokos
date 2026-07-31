@@ -10,8 +10,8 @@
 //!
 //! So this collector parses those lines (request id, max_tokens and, on vLLM
 //! >= 0.11.3 via PR #29227, the prompt text truncated by `max_log_len`) into a
-//! rolling [`MergedLogEntry`] buffer. Uvicorn access lines (the HTTP envelope
-//! and status) are ignored — only the actual inference requests are shown.
+//! > rolling [`MergedLogEntry`] buffer. Uvicorn access lines (the HTTP envelope
+//! > and status) are ignored — only the actual inference requests are shown.
 //!
 //! The source is either a file (`--log-file`) or the stdout of a streaming
 //! command such as `docker logs -f` (`--docker`). A background thread follows
@@ -179,16 +179,16 @@ impl AccessLogTailer {
     /// `docker logs` child so it doesn't outlive the process.
     pub fn stop(&self) {
         self.stop.store(true, Ordering::Relaxed);
-        if let Ok(mut guard) = self.child.lock() {
-            if let Some(mut c) = guard.take() {
-                let _ = c.kill();
-                let _ = c.wait();
-            }
+        if let Ok(mut guard) = self.child.lock()
+            && let Some(mut c) = guard.take()
+        {
+            let _ = c.kill();
+            let _ = c.wait();
         }
-        if let Ok(mut handle_guard) = self.handle.lock() {
-            if let Some(h) = handle_guard.take() {
-                let _ = h.join();
-            }
+        if let Ok(mut handle_guard) = self.handle.lock()
+            && let Some(h) = handle_guard.take()
+        {
+            let _ = h.join();
         }
     }
 }
@@ -287,11 +287,11 @@ fn follow_command(
     // Poll the child: on stop, kill it; on natural exit, reap and report.
     loop {
         if stop.load(Ordering::Relaxed) {
-            if let Ok(mut guard) = child_slot.lock() {
-                if let Some(mut c) = guard.take() {
-                    let _ = c.kill();
-                    let _ = c.wait();
-                }
+            if let Ok(mut guard) = child_slot.lock()
+                && let Some(mut c) = guard.take()
+            {
+                let _ = c.kill();
+                let _ = c.wait();
             }
             break;
         }
@@ -304,10 +304,10 @@ fn follow_command(
         };
         if let Some(status) = status {
             // Reap fully.
-            if let Ok(mut guard) = child_slot.lock() {
-                if let Some(mut c) = guard.take() {
-                    let _ = c.wait();
-                }
+            if let Ok(mut guard) = child_slot.lock()
+                && let Some(mut c) = guard.take()
+            {
+                let _ = c.wait();
             }
             if !stop.load(Ordering::Relaxed) && !status.success() {
                 set_error(

@@ -104,10 +104,10 @@ impl Poller {
 
     pub fn stop(&self) {
         self.state.stop.store(true, Ordering::Relaxed);
-        if let Ok(mut guard) = self.handle.lock() {
-            if let Some(h) = guard.take() {
-                let _ = h.join();
-            }
+        if let Ok(mut guard) = self.handle.lock()
+            && let Some(h) = guard.take()
+        {
+            let _ = h.join();
         }
     }
 

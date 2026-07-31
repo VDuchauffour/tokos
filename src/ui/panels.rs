@@ -581,7 +581,7 @@ pub fn draw_loadavg(p: &mut Painter<'_>, rect: Rect, _snap: &Snapshot, hist: &Hi
     }
 
     // Five columns: a flexible label, then now / 1m / 5m / 15m right-aligned.
-    let mut num_w = (inner.w / 6).max(6).min(9);
+    let mut num_w = (inner.w / 6).clamp(6, 9);
     let mut label_w = inner.w - num_w * 4;
     if label_w < 8 {
         num_w = ((inner.w - 8) / 4).max(5);
@@ -651,7 +651,7 @@ pub fn draw_loadavg(p: &mut Painter<'_>, rect: Rect, _snap: &Snapshot, hist: &Hi
 pub fn truncate_prompt(prompt: Option<&str>, maxlen: usize) -> String {
     let p = match prompt {
         None => return String::new(),
-        Some(s) if s.is_empty() => return String::new(),
+        Some("") => return String::new(),
         Some(s) => s,
     };
     let text: String = p.split_whitespace().collect::<Vec<_>>().join(" ");

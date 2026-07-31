@@ -104,7 +104,7 @@ fn parse_line(line: &str) -> Option<Sample<'_>> {
             if !rest.starts_with('=') {
                 break;
             }
-            rest = &rest[1..].trim_start();
+            rest = rest[1..].trim_start();
             if !rest.starts_with('"') {
                 break;
             }
@@ -184,12 +184,11 @@ pub fn parse_metrics(text: &str) -> VllmSnapshot {
         let name = s.name;
         let value = s.value;
 
-        if snap.model_name.is_none() {
-            if let Some((_, mn)) = s.labels.iter().find(|(k, _)| *k == "model_name") {
-                if !mn.is_empty() {
-                    snap.model_name = Some(mn.clone());
-                }
-            }
+        if snap.model_name.is_none()
+            && let Some((_, mn)) = s.labels.iter().find(|(k, _)| *k == "model_name")
+            && !mn.is_empty()
+        {
+            snap.model_name = Some(mn.clone());
         }
 
         // Process start time (stdlib process collector) -> uptime.

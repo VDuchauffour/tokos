@@ -64,11 +64,7 @@ pub fn braille_chart(
     for (i, &value) in vals.iter().enumerate() {
         let gc = pad + i;
         let mut norm = (value - vmin) / span;
-        if norm < 0.0 {
-            norm = 0.0;
-        } else if norm > 1.0 {
-            norm = 1.0;
-        }
+        norm = norm.clamp(0.0, 1.0);
         let mut filled = (norm * dot_rows as f64).round() as i64;
         if baseline {
             filled = filled.max(1);
