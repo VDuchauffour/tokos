@@ -1,6 +1,6 @@
 [package]
 name = "tokos"
-version = "0.3.0"
+version = "0.0.1"
 edition = "2024"
 description = "A lightweight terminal UI for real-time monitoring of inference server metrics."
 license = "MIT"
