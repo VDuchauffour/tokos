@@ -8,7 +8,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect as TuiRect;
 use ratatui::style::Style;
 
-use crate::state::{epoch_now, History, MergedLogEntry, Snapshot};
+use crate::state::{History, MergedLogEntry, Snapshot, epoch_now};
 use crate::ui::layout::Rect;
 use crate::ui::theme::{Pair, Theme};
 use crate::ui::widgets::{big_number, braille_chart, fmt_duration, fmt_seconds};

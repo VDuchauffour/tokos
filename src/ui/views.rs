@@ -5,7 +5,7 @@
 
 use std::sync::LazyLock;
 
-use crate::ui::layout::{col, leaf, row, Node};
+use crate::ui::layout::{Node, col, leaf, row};
 
 pub struct View {
     pub name: &'static str,

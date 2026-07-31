@@ -29,7 +29,7 @@ use std::time::Duration;
 
 use regex::Regex;
 
-use crate::state::{epoch_now, MergedLogEntry};
+use crate::state::{MergedLogEntry, epoch_now};
 
 // vLLM `--enable-log-requests` log lines.
 // On vLLM >= 0.11.3 (PR #29227) the prompt is present at INFO level.
@@ -457,9 +457,10 @@ mod tests {
 
 #[cfg(test)]
 mod follow_tests {
-    use super::*;
     use std::io::Write;
     use std::time::Instant;
+
+    use super::*;
 
     #[test]
     fn tails_appended_lines() {

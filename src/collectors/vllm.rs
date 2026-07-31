@@ -317,7 +317,7 @@ impl VllmCollector {
                     reachable: false,
                     error: Some(short_error(&e)),
                     ..VllmSnapshot::default()
-                }
+                };
             }
         };
 

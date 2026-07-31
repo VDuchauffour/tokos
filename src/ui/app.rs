@@ -18,17 +18,17 @@ use crossterm::cursor::{Hide, Show};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use ratatui::{backend::CrosstermBackend, style::Style, Frame, Terminal};
+use ratatui::{Frame, Terminal, backend::CrosstermBackend, style::Style};
 
 use crate::collectors::access_log::AccessLogTailer;
 use crate::collectors::vllm::VllmCollector;
 use crate::config::AppConfig;
-use crate::state::{monotonic_now, History, Snapshot, VllmSnapshot};
+use crate::state::{History, Snapshot, VllmSnapshot, monotonic_now};
 use crate::ui::layout::compute_layout;
 use crate::ui::panels::Painter;
-use crate::ui::registry::{find_panel, REGISTRY};
+use crate::ui::registry::{REGISTRY, find_panel};
 use crate::ui::theme::{Pair, Theme};
 use crate::ui::views::VIEWS;
 

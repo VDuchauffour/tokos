@@ -179,9 +179,10 @@ pub fn compute_layout(lines: i32, cols: i32, view: &Node, available: &HashSet<&s
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
     use crate::ui::{registry::REGISTRY, views::VIEWS};
-    use std::collections::HashSet;
 
     fn all_panels() -> HashSet<&'static str> {
         REGISTRY.iter().map(|p| p.id).collect()

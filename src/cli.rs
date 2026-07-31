@@ -14,7 +14,7 @@ use serde_json::json;
 
 use crate::collectors::vllm::VllmCollector;
 use crate::config::AppConfig;
-use crate::state::{monotonic_now, History, Snapshot, SERIES_NAMES};
+use crate::state::{History, SERIES_NAMES, Snapshot, monotonic_now};
 
 /// Styled help/error output, matching the look of `cargo`'s own CLI.
 pub fn cargo_styles() -> Styles {
