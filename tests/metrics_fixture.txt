@@ -543,27 +543,27 @@ http_requests_total{handler="/v1/chat/completions",method="POST",status="2xx"} 1
 # TYPE http_requests_created gauge
 http_requests_created{handler="/v1/models",method="GET",status="2xx"} 1.7799543030479228e+09
 http_requests_created{handler="/v1/chat/completions",method="POST",status="2xx"} 1.7799543045633862e+09
-# HELP http_request_size_bytes Content length of incoming requests by handler. Only value of header is respected. Otherwise ignored. No percentile calculated. 
+# HELP http_request_size_bytes Content length of incoming requests by handler. Only value of header is respected. Otherwise ignored. No percentile calculated.
 # TYPE http_request_size_bytes summary
 http_request_size_bytes_count{handler="/v1/models"} 2.0
 http_request_size_bytes_sum{handler="/v1/models"} 0.0
 http_request_size_bytes_count{handler="/v1/chat/completions"} 12218.0
 http_request_size_bytes_sum{handler="/v1/chat/completions"} 1.66317761e+08
-# HELP http_request_size_bytes_created Content length of incoming requests by handler. Only value of header is respected. Otherwise ignored. No percentile calculated. 
+# HELP http_request_size_bytes_created Content length of incoming requests by handler. Only value of header is respected. Otherwise ignored. No percentile calculated.
 # TYPE http_request_size_bytes_created gauge
 http_request_size_bytes_created{handler="/v1/models"} 1.779954303047938e+09
 http_request_size_bytes_created{handler="/v1/chat/completions"} 1.779954304563399e+09
-# HELP http_response_size_bytes Content length of outgoing responses by handler. Only value of header is respected. Otherwise ignored. No percentile calculated. 
+# HELP http_response_size_bytes Content length of outgoing responses by handler. Only value of header is respected. Otherwise ignored. No percentile calculated.
 # TYPE http_response_size_bytes summary
 http_response_size_bytes_count{handler="/v1/models"} 2.0
 http_response_size_bytes_sum{handler="/v1/models"} 968.0
 http_response_size_bytes_count{handler="/v1/chat/completions"} 12218.0
 http_response_size_bytes_sum{handler="/v1/chat/completions"} 0.0
-# HELP http_response_size_bytes_created Content length of outgoing responses by handler. Only value of header is respected. Otherwise ignored. No percentile calculated. 
+# HELP http_response_size_bytes_created Content length of outgoing responses by handler. Only value of header is respected. Otherwise ignored. No percentile calculated.
 # TYPE http_response_size_bytes_created gauge
 http_response_size_bytes_created{handler="/v1/models"} 1.7799543030479498e+09
 http_response_size_bytes_created{handler="/v1/chat/completions"} 1.7799543045634181e+09
-# HELP http_request_duration_highr_seconds Latency with many buckets but no API specific labels. Made for more accurate percentile calculations. 
+# HELP http_request_duration_highr_seconds Latency with many buckets but no API specific labels. Made for more accurate percentile calculations.
 # TYPE http_request_duration_highr_seconds histogram
 http_request_duration_highr_seconds_bucket{le="0.01"} 2.0
 http_request_duration_highr_seconds_bucket{le="0.025"} 2.0
@@ -589,10 +589,10 @@ http_request_duration_highr_seconds_bucket{le="60.0"} 12220.0
 http_request_duration_highr_seconds_bucket{le="+Inf"} 12220.0
 http_request_duration_highr_seconds_count 12220.0
 http_request_duration_highr_seconds_sum 26512.90676200069
-# HELP http_request_duration_highr_seconds_created Latency with many buckets but no API specific labels. Made for more accurate percentile calculations. 
+# HELP http_request_duration_highr_seconds_created Latency with many buckets but no API specific labels. Made for more accurate percentile calculations.
 # TYPE http_request_duration_highr_seconds_created gauge
 http_request_duration_highr_seconds_created 1.7799541505075521e+09
-# HELP http_request_duration_seconds Latency with only few buckets by handler. Made to be only used if aggregation by handler is important. 
+# HELP http_request_duration_seconds Latency with only few buckets by handler. Made to be only used if aggregation by handler is important.
 # TYPE http_request_duration_seconds histogram
 http_request_duration_seconds_bucket{handler="/v1/models",le="0.1",method="GET"} 2.0
 http_request_duration_seconds_bucket{handler="/v1/models",le="0.5",method="GET"} 2.0
@@ -606,7 +606,7 @@ http_request_duration_seconds_bucket{handler="/v1/chat/completions",le="1.0",met
 http_request_duration_seconds_bucket{handler="/v1/chat/completions",le="+Inf",method="POST"} 12218.0
 http_request_duration_seconds_count{handler="/v1/chat/completions",method="POST"} 12218.0
 http_request_duration_seconds_sum{handler="/v1/chat/completions",method="POST"} 26512.905688800696
-# HELP http_request_duration_seconds_created Latency with only few buckets by handler. Made to be only used if aggregation by handler is important. 
+# HELP http_request_duration_seconds_created Latency with only few buckets by handler. Made to be only used if aggregation by handler is important.
 # TYPE http_request_duration_seconds_created gauge
 http_request_duration_seconds_created{handler="/v1/models",method="GET"} 1.7799543030479708e+09
 http_request_duration_seconds_created{handler="/v1/chat/completions",method="POST"} 1.779954304563439e+09

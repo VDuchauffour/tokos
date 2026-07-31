@@ -1,6 +1,6 @@
 # tokos
 
-> _τόκος_ — Greek for "offspring"; the root of "interest"`
+> _τόκος_ — Greek for "offspring"; the root of "interest"\`
 
 A lightweight terminal UI for real-time monitoring of inference server metrics.
 
@@ -29,15 +29,16 @@ just pre-commit-install
 Common tasks:
 
 ```sh
-just        # list all recipes
-just run    # cargo run
-just test   # cargo test
-just ci     # fmt-check + lint-strict + test
+just      # list all recipes
+just run  # cargo run
+just test # cargo test
+just ci   # fmt-check + lint-strict + test
 ```
 
 ### Release
 
 1. Push a tag: `git tag -a v0.1.0 -m "Release v0.1.0" && git push origin v0.1.0`
+
 2. The [release-drafter](.github/workflows/release-drafter.yml) workflow auto-drafts release notes on every push to `main`.
 
 3. Publish the drafted release on GitHub to trigger the [publish](.github/workflows/publish.yml) workflow, which publishes the crate to crates.io.

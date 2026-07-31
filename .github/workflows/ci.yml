@@ -48,7 +48,8 @@ jobs:
       - name: Install cargo-tarpaulin
         uses: taiki-e/install-action@cargo-tarpaulin
       - name: Generate coverage
-        run: cargo tarpaulin --all-features --workspace --skip-clean --out Lcov --output-dir .
+        run: cargo tarpaulin --all-features --workspace --skip-clean --out Lcov --output-dir
+          .
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v5
