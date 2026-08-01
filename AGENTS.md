@@ -58,41 +58,65 @@ Module ownership:
 
 - `src/config.rs` — `AppConfig`, the single config struct passed to every
   collector and the UI. Defaults live as `pub const` here.
+- `src/cli.rs` — headless `--dump-json` path: `collect_pair()` (two snapshots
+  `interval` apart) and `dump_json()` (serialize derived metrics, print, exit,
+  no TTY). Also `cargo_styles()` for clap help styling.
+- `src/logging.rs` — tracing/tracing-subscriber init driven by `run`'s
+  `--log-level` / `--trace-file` / `--log-format` (text|json) flags; single
+  sink (file or stderr), respects `RUST_LOG` via `EnvFilter`.
 - `src/collectors/` — `Backend` trait + impls: `vllm`, `sglang`,
   `access_log` (tails a log file or `docker logs -f`), `common` (shared
-  exposition-text parser + HTTP fetcher). `AutoCollector` probes `/metrics`
-  once and sniffs the `vllm:` / `sglang:` metric-name prefix to pick the
-  parser; falls back to vllm.
-- `src/mock_server.rs` — std-only mock vLLM server (`mock-server` subcommand).
-  Serves `/metrics` (Prometheus exposition text that round-trips through
-  `collectors::vllm::parse_metrics`), `/health`, `/v1/models`, and
+  exposition-text parser + HTTP fetcher). `run`'s `--backend` flag
+  (`auto`/`vllm`/`sglang`, env `TOKOS_BACKEND`; default `auto`) selects the
+  collector. `AutoCollector` sniffs the `vllm:` / `sglang:` metric-name prefix
+  to pick the parser (falls back to vllm) and **re-probes every 30 polls**
+  (`REPROBE_EVERY`) to catch mid-session server swaps; the trait's
+  `effective_kind()` exposes the detected kind so the UI clears `History` on
+  a swap.
+- `src/mock_server.rs` — std-only mock vLLM **or SGLang** server
+  (`mock-server` subcommand; `--backend vllm|sglang`, no `auto`). Serves
+  `/metrics` (Prometheus exposition text that round-trips through the matching
+  `collectors::{vllm,sglang}::parse_metrics`), `/health`, `/v1/models`, and
   `/v1/{chat,}completions`. Simulated requests update counters/histograms;
   `--generate-traffic` drives them from a background thread. No new deps (no
   `tokio`/`axum`/`rand` — thread-per-connection `std::net` + a xorshift RNG).
-- `src/state.rs` — the largest and most central file. `BackendSnapshot` (raw
-  scrape), `History` (ring-buffer series + 1/5/15-min EMA windows), and all
-  rate/quantile math (`compute_rate`, `histogram_quantile`,
-  `histogram_recent_avg`). Changes to metric derivation belong here, not in
-  collectors or UI.
+- `src/state.rs` — the most central file for metric derivation.
+  `BackendSnapshot` (raw scrape), `History` (ring-buffer series + 1/5/15-min
+  EMA windows), and all rate/quantile math (`compute_rate`,
+  `histogram_quantile`, `histogram_recent_avg`). Changes to metric derivation
+  belong here, not in collectors or UI.
 - `src/ui/` — ratatui app split into `app` (poller thread + render loop),
   `layout`, `panels`, `registry`, `theme`, `views`, `widgets`.
 
 ## Pre-commit hooks
 
-`just pre-commit-install` runs `uvx pre-commit install` — **requires `uv` to
-be installed** (hooks execute via `uvx pre-commit`). Hooks cover: trailing
-whitespace, yaml/yamlfix, toml/taplo, json/prettier, markdown/mdformat, and a
-local `just check` hook. The devcontainer provisions all of this
-automatically (`.devcontainer/post-create.sh`).
+`just pre-commit-install` runs `uvx pre-commit install` — **requires `uv`**
+(hooks execute via `uvx pre-commit`). Hooks: `pre-commit-hooks` (trailing
+whitespace, end-of-file-fixer, `check-{xml,json,yaml,toml}`, debug-statements,
+check-executables-have-shebangs, check-case-conflict, check-added-large-files,
+detect-private-key), `yamlfix`, `taplo` (toml), `prettier` (json only),
+`mdformat` (markdown), and a local `just check` hook. The devcontainer
+provisions pre-commit via `pipx`/`pip` (not `uvx`) in
+`.devcontainer/post-create.sh` — so `uv` is only needed for the `just` recipe,
+not inside the devcontainer.
 
 ## Release & PR conventions
 
 - **PR titles must follow Conventional Commits** (enforced by
   `amannn/action-semantic-pull-request`): lowercase subject
-  (`^(?![A-Z]).+$`), no scope required. PRs labeled `dependencies` bypass
-  title validation.
-- Branch-based auto-labeling (`pr-labeler.yml`): `feature/*`, `fix/*`,
-  `chore/*`, `renovate/*`, etc. map to release-drafter categories.
+  (`^(?![A-Z]).+$`), no scope required, single-commit PRs enforced
+  (`validateSingleCommit`). PRs labeled `dependencies` bypass title
+  validation.
+- PR labeling runs in `.github/workflows/pr-enhancement.yml` via two jobs:
+  branch-based (`TimonVS/pr-labeler-action`, config in
+  `.github/pr-labeler.yml`) maps `feature/*`/`feat/*`, `fix/*`/`fixes/*`,
+  `chore/*`, `renovate/*`/`update/*`/`deps/*`, etc. to labels; and
+  path/label-based (`release-drafter`). Labels then map to release-drafter
+  categories (Features, Bug Fixes, Maintenance, Documentation, Dependencies)
+  in `.github/release-drafter.yml`, which also resolves the next version from
+  `major`/`minor`/`patch` labels.
+- An opencode review bot (`.github/workflows/opencode.yml`) runs on PR/issue
+  comments containing `/oc` or `/opencode`.
 - Release flow: push annotated tag `vX.Y.Z` → `release-drafter` drafts notes
   on every push to `main` → publish the GitHub release → `publish.yml`
   builds and runs `cargo publish` to crates.io. Do not `cargo publish`
