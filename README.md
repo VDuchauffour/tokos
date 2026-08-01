@@ -23,7 +23,7 @@ scripts. A subcommand is always required.
 
 ```sh
 # Launch the TUI
-tokos run --url http://localhost:8000 --interval 1
+tokos run --url http://localhost:8000
 
 # Headless: collect two snapshots, print derived metrics as JSON, exit
 tokos run --url http://localhost:8000 --dump-json
@@ -72,13 +72,6 @@ env wins over default):
 | `--output-tokens-std`   | `TOKOS_MOCK_OUTPUT_TOKENS_STD`   | `0.0`       | stddev for output token count              |
 | `--generate-traffic`    | `TOKOS_MOCK_GENERATE_TRAFFIC`    | `false`     | spawn a background thread driving requests |
 | `--no-color`            | `TOKOS_MOCK_NO_COLOR`            | `false`     | disable colored log output                 |
-
-So `request-latency = 2s` can be set either way:
-
-```sh
-tokos mock-server --request-latency 2.0
-TOKOS_MOCK_REQUEST_LATENCY=2.0 tokos mock-server
-```
 
 ## Usage
 
