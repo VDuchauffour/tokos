@@ -1,4 +1,4 @@
-//! The bordered panels, btop-style. Each draws into a [`Rect`] on screen.
+//! The bordered panels, square-box style. Each draws into a [`Rect`] on screen.
 //!
 //! The [`Painter`] is a thin wrapper over the ratatui [`Buffer`] with edge-safe
 //! writes, mirroring the original curses `Painter.text(y, x, s, attr)` API so
@@ -13,17 +13,13 @@ use crate::ui::layout::Rect;
 use crate::ui::theme::{Pair, Theme};
 use crate::ui::widgets::{big_number, braille_chart, fmt_duration, fmt_seconds};
 
-// btop box-drawing symbols.
-const ROUND_LU: &str = "╭";
-const ROUND_RU: &str = "╮";
-const ROUND_LD: &str = "╰";
-const ROUND_RD: &str = "╯";
+// Square box-drawing symbols.
+const ROUND_LU: &str = "┌";
+const ROUND_RU: &str = "┐";
+const ROUND_LD: &str = "└";
+const ROUND_RD: &str = "┘";
 const H_BAR: &str = "─";
 const V_BAR: &str = "│";
-const TITLE_L: &str = "┐"; // frames the title on the top edge
-const TITLE_R: &str = "┌";
-const TITLE_LD: &str = "┘"; // frames title2 on the bottom edge
-const TITLE_RD: &str = "└";
 const SUPERSCRIPT: [&str; 10] = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"];
 
 /// Limit `s` to `max_cols` display columns (counting one column per char — all
@@ -59,12 +55,12 @@ impl<'a> Painter<'a> {
         self.buf.set_string(x as u16, y as u16, s, style);
     }
 
-    /// Draw a btop-style rounded box and return the inner content [`Rect`].
+    /// Draw a square-bordered box and return the inner content [`Rect`].
     ///
     /// `num` (1-9) is drawn as a superscript before the title, marking the key
-    /// that toggles the panel. `title2` is shown as a tab on the bottom edge.
-    /// `border_pair` colors the outline and title dividers (btop tints each box
-    /// differently).
+    /// that toggles the panel. The title is written directly on the top border
+    /// line so the outline stays a clean rectangle. `title2` sits on the
+    /// bottom edge. `border_pair` colors the outline uniformly.
     #[allow(clippy::too_many_arguments)]
     pub fn box_(
         &mut self,
@@ -89,37 +85,18 @@ impl<'a> Painter<'a> {
             self.text(y + i, x + w - 1, V_BAR, border);
         }
 
-        self.title_tab(y, x, num, title, title_pair, border, TITLE_L, TITLE_R);
+        self.title_tab(y, x, num, title, title_pair);
         if !title2.is_empty() {
-            self.title_tab(
-                y + h - 1,
-                x,
-                0,
-                title2,
-                title_pair,
-                border,
-                TITLE_LD,
-                TITLE_RD,
-            );
+            self.title_tab(y + h - 1, x, 0, title2, title_pair);
         }
         Rect::new(y + 1, x + 1, h - 2, w - 2)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn title_tab(
-        &mut self,
-        y: i32,
-        x: i32,
-        num: i32,
-        title: &str,
-        title_pair: Pair,
-        border: Style,
-        left: &str,
-        right: &str,
-    ) {
+    /// Write the title text directly on the border line at `y`, starting two
+    /// cells in from the left corner. The border's `─` chars remain visible
+    /// around the title, keeping the outline a clean rectangle.
+    fn title_tab(&mut self, y: i32, x: i32, num: i32, title: &str, title_pair: Pair) {
         let mut cx = x + 2;
-        self.text(y, cx, left, border);
-        cx += 1;
         if num != 0 {
             let sup = SUPERSCRIPT[num.clamp(0, 9) as usize];
             self.text(y, cx, sup, self.theme.attr(Pair::Hi, true, false));
@@ -127,20 +104,10 @@ impl<'a> Painter<'a> {
         }
         let label = format!(" {title} ");
         self.text(y, cx, &label, self.theme.attr(title_pair, true, false));
-        cx += label.chars().count() as i32;
-        self.text(y, cx, right, border);
     }
 }
 
-fn draw_chart(
-    p: &mut Painter<'_>,
-    inner: Rect,
-    series: &[f64],
-    vmin: f64,
-    vmax: f64,
-    pair: Pair,
-    gradient: bool,
-) {
+fn draw_chart(p: &mut Painter<'_>, inner: Rect, series: &[f64], vmin: f64, vmax: f64, pair: Pair) {
     if inner.h <= 0 || inner.w <= 0 {
         return;
     }
@@ -153,19 +120,13 @@ fn draw_chart(
         true,
         false,
     );
-    let n = rows.len();
-    let flat = p.theme.attr(pair, false, false);
+    let attr = p.theme.attr(pair, false, false);
     for (i, row) in rows.iter().enumerate() {
-        let attr = if gradient && n > 0 {
-            p.theme.grad_attr((n - i) as f32 / n as f32, false)
-        } else {
-            flat
-        };
         p.text(inner.y + i as i32, inner.x, row, attr);
     }
 }
 
-/// A btop-style mirrored chart split at a shared centre line.
+/// A mirrored chart split at a shared centre line.
 ///
 /// Throughput grows up from the centre (positional green->red gradient).
 /// Below it, the request count grows down as a stacked two-band chart: running
@@ -184,13 +145,10 @@ fn rule(label: &str, width: i32) -> String {
     s.chars().take(w).collect()
 }
 
-/// A btop-style mirrored chart of two single series sharing a centre line.
+/// A mirrored chart of two single series sharing a centre line.
 ///
 /// `top` grows up from the centre, `bottom` grows down from it; each half scales
-/// to its own max. Each half is coloured like a btop network graph — `top` with
-/// the download gradient, `bottom` with the upload gradient — fading dark at the
-/// centre baseline to bright at the peak. The current value of each is a bold
-/// corner label.
+/// to its own max. The current value of each is a bold corner label.
 fn draw_mirror_chart(
     p: &mut Painter<'_>,
     rect: Rect,
@@ -216,13 +174,8 @@ fn draw_mirror_chart(
         true,
         false,
     );
-    let n = top_rows.len();
     for (i, row) in top_rows.iter().enumerate() {
-        let attr = if n > 0 {
-            t.net_attr((n - i) as f32 / n as f32, false, false)
-        } else {
-            t.attr(Pair::Default, false, false)
-        };
+        let attr = t.attr(Pair::Cyan, false, false);
         p.text(rect.y + i as i32, rect.x, row, attr);
     }
 
@@ -237,13 +190,8 @@ fn draw_mirror_chart(
             true,
             true,
         );
-        let m = bot_rows.len();
         for (i, row) in bot_rows.iter().enumerate() {
-            let attr = if m > 0 {
-                t.net_attr((i + 1) as f32 / m as f32, true, false)
-            } else {
-                t.attr(Pair::Default, false, false)
-            };
+            let attr = t.attr(Pair::Magenta, false, false);
             p.text(rect.y + top_h + i as i32, rect.x, row, attr);
         }
     }
@@ -266,7 +214,7 @@ fn draw_mirror_chart(
     }
 }
 
-/// Render a btop mem/disks-style stats column: each row is a label on the left
+/// Render a stats column: each row is a label on the left
 /// and a colour-coded value right-aligned within `rw`.
 fn draw_stat_column(
     p: &mut Painter<'_>,
@@ -436,7 +384,6 @@ fn draw_perf_stacked(
             0.0,
             100.0,
             Pair::Default,
-            true,
         );
     }
 }
