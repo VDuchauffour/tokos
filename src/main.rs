@@ -11,10 +11,12 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand};
 
 use crate::config::{DEFAULT_INTERVAL, DEFAULT_URL};
+use crate::logging::LogFormat;
 
 mod cli;
 mod collectors;
 mod config;
+mod logging;
 mod mock_server;
 mod state;
 mod ui;
@@ -64,6 +66,21 @@ struct RunArgs {
     /// needed)
     #[arg(long)]
     dump_json: bool,
+
+    /// structured log level: error, warn, info, debug, trace, off
+    /// (env TOKOS_LOG_LEVEL; default: off in TUI, warn in --dump-json)
+    #[arg(long, env = "TOKOS_LOG_LEVEL")]
+    log_level: Option<String>,
+
+    /// write structured logs to this file (use in TUI mode to avoid corrupting
+    /// the terminal; env TOKOS_TRACE_FILE)
+    #[arg(long, env = "TOKOS_TRACE_FILE")]
+    trace_file: Option<String>,
+
+    /// structured log output format: text or json
+    /// (env TOKOS_LOG_FORMAT; default: json when --trace-file is set, text otherwise)
+    #[arg(long, env = "TOKOS_LOG_FORMAT", value_enum)]
+    log_format: Option<LogFormat>,
 }
 
 /// Arguments for the `mock-server` subcommand. Mirror guidellm's flags.
@@ -157,7 +174,24 @@ fn build_config(args: RunArgs) -> config::AppConfig {
 /// Run the default action: TUI or `--dump-json`.
 fn run(args: RunArgs) -> ExitCode {
     let dump = args.dump_json;
+    let log_level = args.log_level.clone();
+    let trace_file = args.trace_file.clone();
+    let log_format = args.log_format;
     let config = build_config(args);
+
+    // Default: warn in headless mode, off in TUI mode (stderr corrupts the
+    // alt-screen; use --trace-file to capture TUI logs to a file).
+    let level = log_level
+        .as_deref()
+        .unwrap_or(if dump { "warn" } else { "off" });
+    // Default to JSON when logging to a file (machine-parseable), text when
+    // going to stderr (human-readable).
+    let format = log_format.unwrap_or(if trace_file.is_some() {
+        LogFormat::Json
+    } else {
+        LogFormat::Text
+    });
+    logging::init(level, trace_file.as_deref(), true, format);
 
     if dump {
         return cli::dump_json(&config);

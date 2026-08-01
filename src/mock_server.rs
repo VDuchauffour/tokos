@@ -21,7 +21,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use chrono::Local;
 use log::{error, info};
 use serde_json::json;
 
@@ -429,28 +428,12 @@ fn render_metrics(state: &Mutex<State>) -> String {
     out
 }
 
-/// Initialize the global logger with a local-time timestamp format. Log
-/// levels are colorized via `env_logger`'s default level styles; pass
-/// `no_color = true` to emit plain (uncolored) output.
+/// Initialize the global logger. Delegates to [`crate::logging::init`] with a
+/// fixed `info` level on stderr; pass `no_color = true` to emit plain
+/// (uncolored) output. `log::info!`/`log::error!` calls in this module are
+/// bridged into tracing via the `tracing` crate's `log` feature.
 fn init_logger(no_color: bool) {
-    let mut builder = env_logger::Builder::new();
-    builder
-        .filter_level(log::LevelFilter::Info)
-        .parse_default_env()
-        .format(|buf, record| {
-            let level_style = buf.default_level_style(record.level());
-            writeln!(
-                buf,
-                "[{}] {level_style}{}{level_style:#} - {}",
-                Local::now().format("%H:%M:%S"),
-                record.level(),
-                record.args()
-            )
-        });
-    if no_color {
-        builder.write_style(env_logger::WriteStyle::Never);
-    }
-    builder.init();
+    crate::logging::init("info", None, !no_color, crate::logging::LogFormat::Text);
 }
 
 /// Format an f64 the way Prometheus exposition text expects (plain decimal,

@@ -28,6 +28,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use regex::Regex;
+use tracing::instrument;
 
 use crate::state::{MergedLogEntry, epoch_now};
 
@@ -194,6 +195,7 @@ impl AccessLogTailer {
 }
 
 fn set_error(state: &Arc<Mutex<TailerState>>, msg: String) {
+    tracing::error!(error = %msg, "log tailer error");
     state.lock().unwrap().error = Some(msg);
 }
 
@@ -201,6 +203,7 @@ fn clear_error(state: &Arc<Mutex<TailerState>>) {
     state.lock().unwrap().error = None;
 }
 
+#[instrument(skip(state, stop), fields(source = %path))]
 fn follow_file(path: String, state: Arc<Mutex<TailerState>>, stop: Arc<AtomicBool>, maxlen: usize) {
     while !stop.load(Ordering::Relaxed) {
         let file = match File::open(&path) {
@@ -241,6 +244,7 @@ fn follow_file(path: String, state: Arc<Mutex<TailerState>>, stop: Arc<AtomicBoo
     }
 }
 
+#[instrument(skip(state, stop, child_slot), fields(container = %container))]
 fn follow_command(
     container: String,
     state: Arc<Mutex<TailerState>>,
