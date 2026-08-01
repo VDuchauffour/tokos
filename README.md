@@ -8,22 +8,11 @@ Supports [vLLM](https://github.com/vllm-project/vllm) and [SGLang](https://githu
 
 ## Features
 
-- **Real-time TUI** — btop-style terminal dashboard (`ratatui` + `crossterm`)
-  with braille charts and rounded box-drawing panels for live vLLM metrics
-- **Prometheus scraping** — polls vLLM `/metrics` exposition text and derives
-  rates, histogram quantiles (TTFT, ITL, e2e and queue latency), and prefix-cache
-  hit ratios from raw counters and buckets
-- **Load-average windows** — Unix-style 1/5/15-minute EMA series over throughput
-  and latency, mirroring `uptime`'s load-average semantics
-- **Switchable views** — `overview`, `1·5·15`, and `requests` layouts cycled with
-  the number keys or `Tab`
-- **Live request feed** — tails a vLLM request log file or `docker logs -f` to
-  stream per-request entries from `--enable-log-requests` output
-- **Headless JSON mode** — `--dump-json` collects two snapshots and prints the
-  derived metrics as JSON with no TTY, handy for scripting and CI
-- **Built-in mock server** — `mock-server` serves a synthetic vLLM (`/metrics`,
-  `/v1/models`, `/v1/chat/completions`) with `--generate-traffic` to exercise the TUI
-  without a real deployment
+- **Real-time TUI** — btop-style dashboard with braille charts
+- **Prometheus scraping** — rates, histogram quantiles (TTFT, ITL, e2e/queue latency), prefix-cache hit ratios
+- **Live request feed** — tail a log file or `docker logs -f`
+- **Headless JSON** — `--dump-json` for scripting and CI
+- **Mock server** — `mock-server --generate-traffic` for testing without a deployment
 
 ## Usage
 
@@ -113,9 +102,9 @@ tokos --url http://localhost:8000 --backend vllm
 
 With `--backend auto` (the default), tokos probes `/metrics` once and sniffs the metric-name prefix (`vllm:` vs `sglang:`) to pick the right parser. An explicit `--backend vllm|sglang` skips the probe.
 
-## Getting Started
+## Development
 
-### Development
+### Getting Started
 
 To ensure that you follow the development workflow, please setup the pre-commit hooks:
 
