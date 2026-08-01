@@ -117,8 +117,9 @@ not inside the devcontainer.
 - An opencode review bot (`.github/workflows/opencode.yml`) runs on PR/issue
   comments containing `/oc` or `/opencode`.
 - Release flow: push annotated tag `vX.Y.Z` → `release-drafter` drafts notes
-  on every push to `main` → publish the GitHub release → `publish.yml`
-  builds and runs `cargo publish` to crates.io. Do not `cargo publish`
+  on every push to `main` → publish the GitHub release → `release.yml`
+  builds and runs `cargo publish` to crates.io, and builds/uploads prebuilt
+  release binaries to the GitHub Release. Do not `cargo publish`
   manually.
 - Renovate automerges minor/patch for cargo, github-actions, and pre-commit;
   major bumps require manual review.
