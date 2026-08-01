@@ -117,6 +117,10 @@ struct MockServerArgs {
     /// without external traffic
     #[arg(long)]
     auto_traffic: bool,
+
+    /// disable colored log output
+    #[arg(long)]
+    no_color: bool,
 }
 
 impl From<MockServerArgs> for mock_server::MockServerConfig {
@@ -134,6 +138,7 @@ impl From<MockServerArgs> for mock_server::MockServerConfig {
             output_tokens: a.output_tokens,
             output_tokens_std: a.output_tokens_std,
             auto_traffic: a.auto_traffic,
+            no_color: a.no_color,
         }
     }
 }

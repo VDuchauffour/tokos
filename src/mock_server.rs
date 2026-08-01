@@ -46,6 +46,9 @@ pub struct MockServerConfig {
     /// Spawn a background thread that simulates a request every
     /// `request_latency` seconds so metrics move without external traffic.
     pub auto_traffic: bool,
+
+    /// Disable colored log output.
+    pub no_color: bool,
 }
 
 impl Default for MockServerConfig {
@@ -63,6 +66,7 @@ impl Default for MockServerConfig {
             output_tokens: 128,
             output_tokens_std: 0.0,
             auto_traffic: false,
+            no_color: false,
         }
     }
 }
@@ -425,21 +429,28 @@ fn render_metrics(state: &Mutex<State>) -> String {
     out
 }
 
-/// Initialize the global logger with a local-time timestamp format.
-fn init_logger() {
-    env_logger::Builder::new()
+/// Initialize the global logger with a local-time timestamp format. Log
+/// levels are colorized via `env_logger`'s default level styles; pass
+/// `no_color = true` to emit plain (uncolored) output.
+fn init_logger(no_color: bool) {
+    let mut builder = env_logger::Builder::new();
+    builder
         .filter_level(log::LevelFilter::Info)
         .parse_default_env()
         .format(|buf, record| {
+            let level_style = buf.default_level_style(record.level());
             writeln!(
                 buf,
-                "[{}] {} - {}",
+                "[{}] {level_style}{}{level_style:#} - {}",
                 Local::now().format("%H:%M:%S"),
                 record.level(),
                 record.args()
             )
-        })
-        .init();
+        });
+    if no_color {
+        builder.write_style(env_logger::WriteStyle::Never);
+    }
+    builder.init();
 }
 
 /// Format an f64 the way Prometheus exposition text expects (plain decimal,
@@ -464,7 +475,7 @@ fn fmt_f64(v: f64) -> String {
 /// Start the mock server. Blocks until the listener errors or the process is
 /// interrupted.
 pub fn run(config: MockServerConfig) -> std::process::ExitCode {
-    init_logger();
+    init_logger(config.no_color);
     let addr = format!("{}:{}", config.host, config.port);
     let listener = match TcpListener::bind(&addr) {
         Ok(l) => l,
