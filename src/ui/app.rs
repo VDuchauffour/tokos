@@ -9,7 +9,7 @@
 
 use std::collections::HashSet;
 use std::io::{self, Stdout};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -23,7 +23,7 @@ use crossterm::terminal::{
 use ratatui::{Frame, Terminal, backend::CrosstermBackend, style::Style};
 
 use crate::collectors::access_log::AccessLogTailer;
-use crate::collectors::{self, Backend};
+use crate::collectors::{self, Backend, BackendKind};
 use crate::config::AppConfig;
 use crate::state::{BackendSnapshot, History, Snapshot, monotonic_now};
 use crate::ui::layout::compute_layout;
@@ -44,6 +44,9 @@ struct PollerState {
     stop: AtomicBool,
     paused: AtomicBool,
     interval: Mutex<f64>,
+    pending_backend: Mutex<Option<BackendKind>>,
+    kind: Mutex<BackendKind>,
+    kind_epoch: AtomicUsize,
 }
 
 /// Background thread that takes snapshots without blocking the UI.
@@ -59,6 +62,9 @@ impl Poller {
             stop: AtomicBool::new(false),
             paused: AtomicBool::new(false),
             interval: Mutex::new(config.interval),
+            pending_backend: Mutex::new(None),
+            kind: Mutex::new(config.backend),
+            kind_epoch: AtomicUsize::new(0),
         });
         let st = state.clone();
         let metrics_url = config.metrics_url();
@@ -66,13 +72,18 @@ impl Poller {
         let backend = config.backend;
         let handle = thread::spawn(move || {
             let _span = tracing::info_span!("poller", url = %metrics_url).entered();
-            let collector: Box<dyn Backend> =
-                collectors::make_collector(backend, metrics_url, timeout);
+            let mut collector: Box<dyn Backend> =
+                collectors::make_collector(backend, metrics_url.clone(), timeout);
             loop {
                 if st.stop.load(Ordering::Relaxed) {
                     break;
                 }
                 tracing::trace!("polling metrics");
+
+                if let Some(new_kind) = st.pending_backend.lock().unwrap().take() {
+                    collector = collectors::make_collector(new_kind, metrics_url.clone(), timeout);
+                }
+
                 if !st.paused.load(Ordering::Relaxed) {
                     let (merged, err) = match &tailer {
                         Some(t) => (t.merged_log(None), t.error()),
@@ -85,6 +96,14 @@ impl Poller {
                         access_error: err,
                     };
                     *st.latest.lock().unwrap() = Some(snap);
+
+                    let effective = collector.effective_kind();
+                    let mut kind_guard = st.kind.lock().unwrap();
+                    if effective != *kind_guard {
+                        *kind_guard = effective;
+                        drop(kind_guard);
+                        st.kind_epoch.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
                 let interval = *st.interval.lock().unwrap();
                 let mut slept = 0.0_f64;
@@ -132,6 +151,19 @@ impl Poller {
     pub fn set_interval(&self, v: f64) {
         *self.state.interval.lock().unwrap() = v;
     }
+
+    /// Request a backend swap to `kind`. The poller thread applies it at the
+    /// top of the next loop iteration — never mid-fetch.
+    pub fn request_backend(&self, kind: BackendKind) {
+        *self.state.pending_backend.lock().unwrap() = Some(kind);
+    }
+
+    /// Monotonically increasing counter that ticks every time the effective
+    /// backend kind changes. The render loop compares this to decide when to
+    /// clear `History`.
+    pub fn kind_epoch(&self) -> usize {
+        self.state.kind_epoch.load(Ordering::Relaxed)
+    }
 }
 
 pub struct App {
@@ -144,6 +176,8 @@ pub struct App {
     last: Option<Snapshot>,
     active_view: usize,
     toast_until: f64,
+    last_kind_epoch: usize,
+    backend_toast_until: f64,
 }
 
 impl App {
@@ -168,6 +202,8 @@ impl App {
             last: None,
             active_view: 0,
             toast_until: 0.0,
+            last_kind_epoch: 0,
+            backend_toast_until: 0.0,
         }
     }
 
@@ -212,6 +248,11 @@ impl App {
     fn run_loop(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> io::Result<()> {
         loop {
             if let Some(snap) = self.poller.take() {
+                let epoch = self.poller.kind_epoch();
+                if epoch != self.last_kind_epoch {
+                    self.history.clear();
+                    self.last_kind_epoch = epoch;
+                }
                 self.history.update(snap.clone());
                 self.last = Some(snap);
             }
@@ -256,6 +297,16 @@ impl App {
                 }
                 KeyCode::Char(c) if ('1'..='9').contains(&c) => {
                     self.select_view((c as u8 - b'1') as usize);
+                }
+                KeyCode::Char('b') => {
+                    let next = match self.config.backend {
+                        BackendKind::Auto => BackendKind::Vllm,
+                        BackendKind::Vllm => BackendKind::Sgl,
+                        BackendKind::Sgl => BackendKind::Auto,
+                    };
+                    self.config.backend = next;
+                    self.poller.request_backend(next);
+                    self.backend_toast_until = monotonic_now() + TOAST_SECONDS;
                 }
                 _ => {}
             }
@@ -310,6 +361,11 @@ impl App {
         if monotonic_now() < self.toast_until {
             self.draw_toast(&mut painter, cols, view.name);
         }
+        if monotonic_now() < self.backend_toast_until {
+            let label = format!(" backend: {} ", self.config.backend.as_str());
+            let x = ((cols - label.chars().count() as i32) / 2).max(0);
+            painter.text(1, x, &label, self.theme.attr(Pair::Hi, true, false));
+        }
         if self.show_help {
             self.draw_help(&mut painter, lines, cols);
         }
@@ -334,6 +390,7 @@ impl App {
             "  q / Esc    quit".to_string(),
             "  + / -      faster / slower refresh".to_string(),
             "  p          pause / resume polling".to_string(),
+            "  b          cycle backend (auto → vllm → sglang)".to_string(),
             "  Tab        cycle to the next view".to_string(),
             format!("  1 - {}      switch view", VIEWS.len()),
             "  h / ?      toggle this help".to_string(),

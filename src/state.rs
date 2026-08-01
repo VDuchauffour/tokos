@@ -477,6 +477,13 @@ impl History {
         self.prev = Some(snap);
     }
 
+    /// Reset all series, derived values, EMA windows, and the previous-snapshot
+    /// baseline. Called when the backend kind changes (vLLM ↔ SGLang) so stale
+    /// series from the old metric names don't pollute charts.
+    pub fn clear(&mut self) {
+        *self = Self::new(self.maxlen);
+    }
+
     fn set(&mut self, name: &'static str, value: f64) {
         if let Some(s) = self.series.get_mut(name) {
             s.append(value);
@@ -631,6 +638,26 @@ mod tests {
         assert_eq!(*h.derived.get("gen_tok_s").unwrap(), 100.0);
         assert_eq!(*h.derived.get("running").unwrap(), 2.0);
         assert_eq!(h.series["gen_tok_s"].values(), vec![0.0, 100.0]);
+    }
+
+    #[test]
+    fn history_clear_resets_all() {
+        let mut h = History::new(HISTORY_LEN);
+        h.update(snap(0.0, 1000.0, 1.0));
+        h.update(snap(2.0, 1200.0, 2.0));
+        assert!(!h.series["gen_tok_s"].is_empty());
+
+        h.clear();
+
+        for name in SERIES_NAMES {
+            assert!(h.series[name].is_empty(), "{name} not cleared");
+            assert_eq!(
+                *h.derived.get(name).unwrap(),
+                0.0,
+                "{name} derived not reset"
+            );
+            assert_eq!(*h.avg.get(name).unwrap(), [0.0; 3], "{name} avg not reset");
+        }
     }
 
     #[test]

@@ -16,6 +16,7 @@ pub mod sglang;
 pub mod vllm;
 
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use crate::state::BackendSnapshot;
@@ -23,6 +24,15 @@ use crate::state::BackendSnapshot;
 /// A metrics backend collector: produces a [`BackendSnapshot`] per poll.
 pub trait Backend: Send + Sync {
     fn poll(&self) -> BackendSnapshot;
+
+    /// The backend kind this collector is effectively using. For
+    /// [`AutoCollector`] this is the *detected* kind (after the first poll);
+    /// for pinned collectors it is the kind itself. The poller compares this
+    /// across polls to detect a mid-session server swap and signal the UI to
+    /// clear its [`History`](crate::state::History).
+    fn effective_kind(&self) -> BackendKind {
+        BackendKind::Auto
+    }
 }
 
 /// Which backend to scrape.
@@ -64,13 +74,22 @@ pub fn make_collector(kind: BackendKind, metrics_url: String, timeout: f64) -> B
     }
 }
 
-/// Auto-detecting collector: probes `/metrics` once, picks vllm or sglang from
-/// the metric-name prefix, then delegates all subsequent polls to the chosen
-/// backend. The first poll's body is parsed immediately (no double fetch).
+/// Re-probe the backend kind every this many polls so a mid-session server
+/// swap (e.g. a vLLM pod replaced by SGLang behind the same URL) is caught
+/// without a restart.
+const REPROBE_EVERY: u64 = 30;
+
+/// Auto-detecting collector: probes `/metrics`, picks vllm or sglang from the
+/// metric-name prefix, then delegates subsequent polls to the chosen backend.
+/// The first poll's body is parsed immediately (no double fetch). Every
+/// [`REPROBE_EVERY`] polls the kind is re-sniffed so a mid-session server swap
+/// is caught automatically.
 pub struct AutoCollector {
     url: String,
     timeout: Duration,
     inner: Mutex<Option<Box<dyn Backend>>>,
+    poll_count: AtomicU64,
+    current_kind: Mutex<BackendKind>,
 }
 
 impl AutoCollector {
@@ -79,6 +98,8 @@ impl AutoCollector {
             url,
             timeout: Duration::from_secs_f64(timeout.max(0.001)),
             inner: Mutex::new(None),
+            poll_count: AtomicU64::new(0),
+            current_kind: Mutex::new(BackendKind::Auto),
         }
     }
 
@@ -96,7 +117,6 @@ impl AutoCollector {
             if t.starts_with("sglang:") {
                 return BackendKind::Sgl;
             }
-            // Keep scanning — python/process lines come before backend metrics.
         }
         BackendKind::Vllm
     }
@@ -104,33 +124,47 @@ impl AutoCollector {
 
 impl Backend for AutoCollector {
     fn poll(&self) -> BackendSnapshot {
+        let count = self.poll_count.fetch_add(1, Ordering::Relaxed) + 1;
         let mut guard = self.inner.lock().unwrap();
-        if let Some(ref c) = *guard {
-            return c.poll();
-        }
-        // First poll: fetch once, sniff, parse with the detected backend, and
-        // store the real collector for subsequent polls.
-        match common::fetch_metrics_text(&self.url, self.timeout) {
-            Ok(text) => {
-                let kind = Self::detect(&text);
-                let parsed = match kind {
-                    BackendKind::Vllm => vllm::parse_metrics(&text),
-                    BackendKind::Sgl => sglang::parse_metrics(&text),
-                    BackendKind::Auto => vllm::parse_metrics(&text),
-                };
-                *guard = Some(make_collector(
-                    kind,
-                    self.url.clone(),
-                    self.timeout.as_secs_f64(),
-                ));
-                parsed
+
+        // First poll or periodic re-probe: fetch once, sniff, and rebuild the
+        // inner collector if the kind changed. The already-fetched text is
+        // parsed directly so there is no double fetch on probe polls.
+        let need_probe = guard.is_none() || count.is_multiple_of(REPROBE_EVERY);
+        if need_probe {
+            match common::fetch_metrics_text(&self.url, self.timeout) {
+                Ok(text) => {
+                    let kind = Self::detect(&text);
+                    let prev = *self.current_kind.lock().unwrap();
+                    if guard.is_none() || kind != prev {
+                        *guard = Some(make_collector(
+                            kind,
+                            self.url.clone(),
+                            self.timeout.as_secs_f64(),
+                        ));
+                        *self.current_kind.lock().unwrap() = kind;
+                    }
+                    return match kind {
+                        BackendKind::Vllm => vllm::parse_metrics(&text),
+                        BackendKind::Sgl => sglang::parse_metrics(&text),
+                        BackendKind::Auto => vllm::parse_metrics(&text),
+                    };
+                }
+                Err(e) => {
+                    return BackendSnapshot {
+                        reachable: false,
+                        error: Some(e),
+                        ..BackendSnapshot::default()
+                    };
+                }
             }
-            Err(e) => BackendSnapshot {
-                reachable: false,
-                error: Some(e),
-                ..BackendSnapshot::default()
-            },
         }
+
+        guard.as_ref().unwrap().poll()
+    }
+
+    fn effective_kind(&self) -> BackendKind {
+        *self.current_kind.lock().unwrap()
     }
 }
 
@@ -169,5 +203,23 @@ mod tests {
             AutoCollector::detect("python_info{...} 1\n"),
             BackendKind::Vllm
         );
+    }
+
+    #[test]
+    fn vllm_collector_effective_kind() {
+        let c = vllm::VllmCollector::new("http://localhost:0/metrics".into(), 0.1);
+        assert_eq!(c.effective_kind(), BackendKind::Vllm);
+    }
+
+    #[test]
+    fn sgl_collector_effective_kind() {
+        let c = sglang::SglCollector::new("http://localhost:0/metrics".into(), 0.1);
+        assert_eq!(c.effective_kind(), BackendKind::Sgl);
+    }
+
+    #[test]
+    fn auto_collector_initial_kind() {
+        let c = AutoCollector::new("http://localhost:0/metrics".into(), 0.1);
+        assert_eq!(c.effective_kind(), BackendKind::Auto);
     }
 }

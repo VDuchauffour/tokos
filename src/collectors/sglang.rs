@@ -153,6 +153,10 @@ impl crate::collectors::Backend for SglCollector {
     fn poll(&self) -> BackendSnapshot {
         SglCollector::poll(self)
     }
+
+    fn effective_kind(&self) -> crate::collectors::BackendKind {
+        crate::collectors::BackendKind::Sgl
+    }
 }
 
 #[cfg(test)]

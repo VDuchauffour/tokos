@@ -196,6 +196,10 @@ impl crate::collectors::Backend for VllmCollector {
     fn poll(&self) -> BackendSnapshot {
         VllmCollector::poll(self)
     }
+
+    fn effective_kind(&self) -> crate::collectors::BackendKind {
+        crate::collectors::BackendKind::Vllm
+    }
 }
 
 // ---- fixture-driven tests (port of tests/test_prometheus.py) ----
