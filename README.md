@@ -14,6 +14,53 @@ A lightweight terminal UI for real-time monitoring of inference server metrics.
 - **Pre-commit hooks** for formatting and linting
 - **Renovate** config for automated dependency updates
 
+## Usage
+
+`tokos` has two subcommands: `run` (the default) launches the TUI against a
+live vLLM `/metrics` endpoint, and `mock-server` starts a synthetic vLLM
+server for testing the TUI without a real deployment.
+
+`run` is the default subcommand, so its flags are accepted at the top level —
+`tokos --url X` is shorthand for `tokos run --url X`, and bare `tokos` launches
+the TUI with environment-derived defaults.
+
+```sh
+# Launch the TUI (default subcommand)
+tokos
+tokos --url http://localhost:8000 --interval 1
+
+# Explicit form
+tokos run --url http://localhost:8000 --interval 1
+
+# Headless: collect two snapshots, print derived metrics as JSON, exit
+tokos --dump-json
+tokos run --url http://localhost:8000 --dump-json
+
+# Start a mock vLLM server (serves /metrics, /v1/models, /v1/chat/completions)
+tokos mock-server --port 8000 --model llama-3.1-8b-instruct
+
+# Drive the mock with synthetic traffic so the TUI shows live movement
+tokos mock-server --port 8000 --auto-traffic
+# in another terminal:
+tokos --url http://127.0.0.1:8000
+```
+
+Common `run` flags:
+
+| Flag          | Env              | Default                 | Description                            |
+| ------------- | ---------------- | ----------------------- | -------------------------------------- |
+| `--url`       | `TOKOS_URL`      | `http://localhost:8000` | vLLM base URL                          |
+| `--interval`  |                  | `1.0`                   | poll interval in seconds               |
+| `--log-file`  | `TOKOS_LOG_FILE` |                         | vLLM request log to tail               |
+| `--docker`    | `TOKOS_DOCKER`   |                         | container to `docker logs -f`          |
+| `--dump-json` |                  | `false`                 | print derived metrics as JSON and exit |
+
+`mock-server` flags mirror [guidellm](https://github.com/vllm-project/guidellm):
+`--host`, `--port`, `--model`, `--request-latency`, `--request-latency-std`,
+`--ttft-ms`, `--ttft-ms-std`, `--itl-ms`, `--itl-ms-std`, `--output-tokens`,
+`--output-tokens-std`, and `--auto-traffic`. Run `tokos mock-server --help` for
+the full list.
+
 ## Getting Started
 
 ### Development

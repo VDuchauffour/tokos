@@ -46,9 +46,13 @@ All dev tasks go through `just` (see `justfile`). Non-obvious points:
 
 ## Architecture
 
-Entry flow (`src/main.rs`): clap-derive `Args` → either headless
-`cli::dump_json` (collect two snapshots, print JSON, exit, no TTY needed) or
-`ui::app::App::run` (TUI render loop).
+Entry flow (`src/main.rs`): clap-derive `Cli` with two subcommands — `run`
+(the default) and `mock-server`. `run`'s flags are flattened to the top level
+via `args_conflicts_with_subcommands`, so `tokos --url X` is shorthand for
+`tokos run --url X` and bare `tokos` launches the TUI. `run` dispatches to
+either headless `cli::dump_json` (collect two snapshots, print JSON, exit, no
+TTY needed) or `ui::app::App::run` (TUI render loop). `mock-server` calls
+`mock_server::run`.
 
 Module ownership:
 
@@ -59,6 +63,12 @@ Module ownership:
   exposition-text parser + HTTP fetcher). `AutoCollector` probes `/metrics`
   once and sniffs the `vllm:` / `sglang:` metric-name prefix to pick the
   parser; falls back to vllm.
+- `src/mock_server.rs` — std-only mock vLLM server (`mock-server` subcommand).
+  Serves `/metrics` (Prometheus exposition text that round-trips through
+  `collectors::vllm::parse_metrics`), `/health`, `/v1/models`, and
+  `/v1/{chat,}completions`. Simulated requests update counters/histograms;
+  `--auto-traffic` drives them from a background thread. No new deps (no
+  `tokio`/`axum`/`rand` — thread-per-connection `std::net` + a xorshift RNG).
 - `src/state.rs` — the largest and most central file. `BackendSnapshot` (raw
   scrape), `History` (ring-buffer series + 1/5/15-min EMA windows), and all
   rate/quantile math (`compute_rate`, `histogram_quantile`,
