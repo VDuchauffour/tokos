@@ -23,9 +23,9 @@ use crossterm::terminal::{
 use ratatui::{Frame, Terminal, backend::CrosstermBackend, style::Style};
 
 use crate::collectors::access_log::AccessLogTailer;
-use crate::collectors::vllm::VllmCollector;
+use crate::collectors::{self, Backend};
 use crate::config::AppConfig;
-use crate::state::{History, Snapshot, VllmSnapshot, monotonic_now};
+use crate::state::{BackendSnapshot, History, Snapshot, monotonic_now};
 use crate::ui::layout::compute_layout;
 use crate::ui::panels::Painter;
 use crate::ui::registry::{REGISTRY, find_panel};
@@ -63,9 +63,11 @@ impl Poller {
         let st = state.clone();
         let metrics_url = config.metrics_url();
         let timeout = config.http_timeout;
+        let backend = config.backend;
         let handle = thread::spawn(move || {
             let _span = tracing::info_span!("poller", url = %metrics_url).entered();
-            let vllm = VllmCollector::new(metrics_url, timeout);
+            let collector: Box<dyn Backend> =
+                collectors::make_collector(backend, metrics_url, timeout);
             loop {
                 if st.stop.load(Ordering::Relaxed) {
                     break;
@@ -78,7 +80,7 @@ impl Poller {
                     };
                     let snap = Snapshot {
                         monotonic: monotonic_now(),
-                        vllm: vllm.poll(),
+                        backend: collector.poll(),
                         merged_log: merged,
                         access_error: err,
                     };
@@ -290,7 +292,7 @@ impl App {
             return;
         }
 
-        let default_snap = Snapshot::new(monotonic_now(), VllmSnapshot::default());
+        let default_snap = Snapshot::new(monotonic_now(), BackendSnapshot::default());
         let snap = self.last.as_ref().unwrap_or(&default_snap);
 
         for (pid, rect) in &layout.panels {

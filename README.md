@@ -4,6 +4,8 @@
 
 A lightweight terminal UI for real-time monitoring of inference server metrics.
 
+Supports [vLLM](https://github.com/vllm-project/vllm) and [SGLang](https://github.com/sgl-project/sglang) via their Prometheus `/metrics` endpoints.
+
 ## Features
 
 - **Real-time TUI** — btop-style terminal dashboard (`ratatui` + `crossterm`)
@@ -90,6 +92,25 @@ So `request-latency = 2s` can be set either way:
 tokos mock-server --request-latency 2.0
 TOKOS_MOCK_REQUEST_LATENCY=2.0 tokos mock-server
 ```
+
+## Usage
+
+```sh
+tokos --url http://localhost:8000 # auto-detect backend (default)
+tokos --url http://localhost:30000 --backend sglang
+tokos --url http://localhost:8000 --backend vllm
+```
+
+| Flag          | Env              | Default                 | Description                                                         |
+| ------------- | ---------------- | ----------------------- | ------------------------------------------------------------------- |
+| `--url`       | `TOKOS_URL`      | `http://localhost:8000` | Inference server base URL                                           |
+| `--backend`   | `TOKOS_BACKEND`  | `auto`                  | `auto`, `vllm`, or `sglang`                                         |
+| `--interval`  | —                | `1.0`                   | Poll interval in seconds                                            |
+| `--log-file`  | `TOKOS_LOG_FILE` | —                       | Tail a log file for the request feed (vLLM `--enable-log-requests`) |
+| `--docker`    | `TOKOS_DOCKER`   | —                       | Stream `docker logs -f` from a container                            |
+| `--dump-json` | —                | —                       | Collect two snapshots, print derived metrics as JSON, exit          |
+
+With `--backend auto` (the default), tokos probes `/metrics` once and sniffs the metric-name prefix (`vllm:` vs `sglang:`) to pick the right parser. An explicit `--backend vllm|sglang` skips the probe.
 
 ## Getting Started
 

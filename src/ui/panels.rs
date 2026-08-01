@@ -463,7 +463,7 @@ pub fn draw_perf(p: &mut Painter<'_>, rect: Rect, snap: &Snapshot, hist: &Histor
             hist,
             &metrics,
             *hist.derived.get("kv_cache").unwrap_or(&0.0),
-            snap.vllm.prefix_cache_hit_rate() * 100.0,
+            snap.backend.prefix_cache_hit_rate() * 100.0,
         );
         return;
     }

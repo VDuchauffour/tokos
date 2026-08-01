@@ -22,6 +22,7 @@ mod mock_server;
 mod state;
 mod ui;
 
+use crate::collectors::BackendKind;
 /// A btop-style TUI for monitoring a vLLM instance.
 #[derive(Parser)]
 #[command(name = "tokos", version, about, styles = cli::cargo_styles(), args_conflicts_with_subcommands = true)]
@@ -53,6 +54,10 @@ struct RunArgs {
     /// poll interval in seconds (default 1.0)
     #[arg(long, default_value_t = DEFAULT_INTERVAL)]
     interval: f64,
+
+    /// inference backend to scrape: auto, vllm, or sglang (env TOKOS_BACKEND)
+    #[arg(long, env = "TOKOS_BACKEND", value_parser = parse_backend, default_value = "auto")]
+    backend: BackendKind,
 
     /// tail this vLLM log file for the requests panel (env TOKOS_LOG_FILE)
     #[arg(long, env = "TOKOS_LOG_FILE")]
@@ -185,9 +190,15 @@ fn build_config(args: RunArgs) -> config::AppConfig {
         interval: args.interval.max(0.1),
         history_len: config::HISTORY_LEN,
         http_timeout: config::HTTP_TIMEOUT,
+        backend: args.backend,
         log_file: args.log_file,
         docker_container: args.docker,
     }
+}
+
+fn parse_backend(s: &str) -> Result<BackendKind, String> {
+    BackendKind::parse(s)
+        .ok_or_else(|| format!("invalid backend '{s}' (expected auto, vllm, or sglang)"))
 }
 
 /// Run the default action: TUI or `--dump-json`.

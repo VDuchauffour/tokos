@@ -1,16 +1,16 @@
-//! Collect a [`VllmSnapshot`] from a vLLM `/metrics` endpoint.
+//! Collect a [`BackendSnapshot`] from a vLLM `/metrics` endpoint.
 //!
 //! [`parse_metrics`] is a pure function (no I/O) so it can be unit-tested
 //! against a fixture. Values are summed across `engine` labels in case of
 //! multiple engines.
 
 use std::collections::HashMap;
-use std::io::Read;
 use std::time::Duration;
 
 use tracing::instrument;
 
-use crate::state::{Histogram, VllmSnapshot};
+use crate::collectors::common::{self, le_to_float};
+use crate::state::{BackendSnapshot, Histogram};
 
 /// Scalar series we read directly by sample name (summed across engine labels).
 const SCALAR_NAMES: &[&str] = &[
@@ -26,12 +26,7 @@ const SCALAR_NAMES: &[&str] = &[
     "vllm:request_success_total",
 ];
 
-/// Cap on a single /metrics body. The endpoint is plain text and normally well
-/// under 1 MB; this bounds memory if a compromised/misconfigured server (or a
-/// MITM on plain HTTP) streams an unbounded body.
-pub const MAX_METRICS_BYTES: usize = 16 * 1024 * 1024;
-
-/// Histogram base names -> attribute on [`VllmSnapshot`].
+/// Histogram base names -> attribute on [`BackendSnapshot`].
 const HISTOGRAMS: &[(&str, &str)] = &[
     ("vllm:time_to_first_token_seconds", "ttft"),
     ("vllm:inter_token_latency_seconds", "inter_token"),
@@ -43,135 +38,12 @@ const HISTOGRAMS: &[(&str, &str)] = &[
     ("vllm:request_decode_time_seconds", "decode_time"),
 ];
 
-fn le_to_float(le: &str) -> f64 {
-    match le.trim() {
-        "+Inf" | "Inf" | "inf" => f64::INFINITY,
-        s => s.parse::<f64>().unwrap_or(f64::INFINITY),
-    }
-}
-
-fn parse_value(s: &str) -> f64 {
-    match s.trim() {
-        "+Inf" | "Inf" | "inf" | "Infinity" | "infinity" => f64::INFINITY,
-        "-Inf" | "-inf" => f64::NEG_INFINITY,
-        "NaN" | "nan" => f64::NAN,
-        other => other.parse::<f64>().unwrap_or(0.0),
-    }
-}
-
-/// One parsed metric sample: name, labels, value.
-struct Sample<'a> {
-    name: &'a str,
-    labels: Vec<(&'a str, String)>,
-    value: f64,
-}
-
-/// Parse a single exposition-text line into a [`Sample`], or `None` for
-/// comments / blank lines.
-fn parse_line(line: &str) -> Option<Sample<'_>> {
-    let line = line.trim();
-    if line.is_empty() || line.starts_with('#') {
-        return None;
-    }
-
-    // Metric name: [a-zA-Z_:][a-zA-Z0-9_:]*
-    let name_end = line
-        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == ':'))
-        .unwrap_or(line.len());
-    let (name, rest) = line.split_at(name_end);
-    if name.is_empty() {
-        return None;
-    }
-
-    // Optional label block {k="v",...}
-    let mut rest = rest.trim_start();
-    let mut labels: Vec<(&str, String)> = Vec::new();
-    if rest.starts_with('{') {
-        rest = &rest[1..];
-        loop {
-            rest = rest.trim_start();
-            if rest.starts_with('}') {
-                rest = &rest[1..];
-                break;
-            }
-            if rest.is_empty() {
-                break;
-            }
-            // key
-            let k_end = rest
-                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-                .unwrap_or(rest.len());
-            let (key, after) = rest.split_at(k_end);
-            rest = after.trim_start();
-            if !rest.starts_with('=') {
-                break;
-            }
-            rest = rest[1..].trim_start();
-            if !rest.starts_with('"') {
-                break;
-            }
-            // Read a quoted string with escapes (`\"` `\\` `\n`), stopping at
-            // the closing `"`. Operate on bytes but push whole chars so UTF-8
-            // prompts survive intact.
-            rest = &rest[1..];
-            let mut val = String::new();
-            let mut i = 0;
-            let bytes = rest.as_bytes();
-            while i < bytes.len() {
-                let b = bytes[i];
-                if b == b'\\' {
-                    i += 1;
-                    if i < bytes.len() {
-                        match bytes[i] {
-                            b'"' => val.push('"'),
-                            b'\\' => val.push('\\'),
-                            b'n' => val.push('\n'),
-                            other => val.push(other as char),
-                        }
-                        i += 1;
-                    }
-                } else if b == b'"' {
-                    i += 1;
-                    break;
-                } else {
-                    let ch = rest[i..].chars().next().unwrap();
-                    val.push(ch);
-                    i += ch.len_utf8();
-                }
-            }
-            rest = &rest[i..];
-            labels.push((key, val));
-            rest = rest.trim_start();
-            if rest.starts_with(',') {
-                rest = &rest[1..];
-            } else if rest.starts_with('}') {
-                rest = &rest[1..];
-                break;
-            } else {
-                break;
-            }
-        }
-    }
-
-    // value (first whitespace-delimited token; ignore optional timestamp)
-    let value_token = rest.split_whitespace().next().unwrap_or("");
-    if value_token.is_empty() {
-        return None;
-    }
-    let value = parse_value(value_token);
-    Some(Sample {
-        name,
-        labels,
-        value,
-    })
-}
-
-/// Parse Prometheus exposition text into a [`VllmSnapshot`].
+/// Parse Prometheus exposition text into a [`BackendSnapshot`].
 #[instrument(skip(text), fields(bytes = text.len()))]
-pub fn parse_metrics(text: &str) -> VllmSnapshot {
-    let mut snap = VllmSnapshot {
+pub fn parse_metrics(text: &str) -> BackendSnapshot {
+    let mut snap = BackendSnapshot {
         reachable: true,
-        ..VllmSnapshot::default()
+        ..BackendSnapshot::default()
     };
 
     let mut scalars: HashMap<&str, f64> = SCALAR_NAMES.iter().map(|&n| (n, 0.0)).collect();
@@ -181,7 +53,7 @@ pub fn parse_metrics(text: &str) -> VllmSnapshot {
         .collect();
 
     for line in text.lines() {
-        let Some(s) = parse_line(line) else {
+        let Some(s) = common::parse_line(line) else {
             continue;
         };
         let name = s.name;
@@ -308,106 +180,32 @@ impl VllmCollector {
     }
 
     #[instrument(skip(self), fields(url = %self.metrics_url))]
-    pub fn poll(&self) -> VllmSnapshot {
-        let resp = ureq::get(&self.metrics_url)
-            .set("Accept", "text/plain")
-            .timeout(self.timeout)
-            .call();
-        let resp = match resp {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!(error = %short_error(&e), "metrics fetch failed");
-                return VllmSnapshot {
-                    reachable: false,
-                    error: Some(short_error(&e)),
-                    ..VllmSnapshot::default()
-                };
-            }
-        };
-
-        // Read the body with a cap so a runaway server can't exhaust memory.
-        let mut reader = resp.into_reader().take((MAX_METRICS_BYTES as u64) + 1);
-        let mut buf = Vec::new();
-        if let Err(e) = reader.read_to_end(&mut buf) {
-            tracing::error!(error = %e, "metrics body read failed");
-            return VllmSnapshot {
+    pub fn poll(&self) -> BackendSnapshot {
+        match common::fetch_metrics_text(&self.metrics_url, self.timeout) {
+            Ok(text) => parse_metrics(&text),
+            Err(e) => BackendSnapshot {
                 reachable: false,
-                error: Some(format!("{e}")),
-                ..VllmSnapshot::default()
-            };
-        }
-        if buf.len() > MAX_METRICS_BYTES {
-            tracing::error!(
-                size = buf.len(),
-                limit = MAX_METRICS_BYTES,
-                "metrics body exceeded size limit"
-            );
-            return VllmSnapshot {
-                reachable: false,
-                error: Some(format!("/metrics body exceeded {MAX_METRICS_BYTES} bytes")),
-                ..VllmSnapshot::default()
-            };
-        }
-        let text = String::from_utf8_lossy(&buf).into_owned();
-        tracing::debug!(bytes = text.len(), "metrics fetched");
-        parse_metrics(&text)
-    }
-}
-
-fn short_error(e: &ureq::Error) -> String {
-    // ureq splits errors into Status (non-2xx) and Transport; surface a short
-    // reason for the disconnect banner.
-    match e {
-        ureq::Error::Status(code, _resp) => format!("HTTP {code}"),
-        ureq::Error::Transport(t) => {
-            let msg = t.to_string();
-            // "Transport: ..." -> strip the prefix for a terser banner.
-            msg.strip_prefix("Transport: ").unwrap_or(&msg).to_string()
+                error: Some(e),
+                ..BackendSnapshot::default()
+            },
         }
     }
 }
 
+impl crate::collectors::Backend for VllmCollector {
+    fn poll(&self) -> BackendSnapshot {
+        VllmCollector::poll(self)
+    }
+}
+
+// ---- fixture-driven tests (port of tests/test_prometheus.py) ----
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn parse_skips_comments_and_blank() {
-        let s = parse_line("# HELP foo bar");
-        assert!(s.is_none());
-        let s = parse_line("   ");
-        assert!(s.is_none());
-    }
-
-    #[test]
-    fn parse_plain_value() {
-        let s = parse_line("process_start_time_seconds 1.77995408251e+09").unwrap();
-        assert_eq!(s.name, "process_start_time_seconds");
-        assert!((s.value - 1.77995408251e9).abs() < 1e-3);
-        assert!(s.labels.is_empty());
-    }
-
-    #[test]
-    fn parse_labels_and_inf() {
-        let s = parse_line(r#"vllm:time_to_first_token_seconds_bucket{le="+Inf",engine="0"} 42.0"#)
-            .unwrap();
-        assert_eq!(s.name, "vllm:time_to_first_token_seconds_bucket");
-        assert_eq!(s.value, 42.0);
-        let le = s.labels.iter().find(|(k, _)| *k == "le").unwrap();
-        assert_eq!(le.1, "+Inf");
-    }
-
-    #[test]
-    fn parse_escaped_quotes() {
-        let s = parse_line(r#"x{prompt="he said \"hi\"\n"} 1.0"#).unwrap();
-        let p = s.labels.iter().find(|(k, _)| *k == "prompt").unwrap();
-        assert_eq!(p.1, "he said \"hi\"\n");
-    }
-
-    // ---- fixture-driven tests (port of tests/test_prometheus.py) ----
     const FIXTURE: &str = include_str!("../../tests/metrics_fixture.txt");
 
-    fn snap() -> VllmSnapshot {
+    fn snap() -> BackendSnapshot {
         parse_metrics(FIXTURE)
     }
 

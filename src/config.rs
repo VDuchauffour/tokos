@@ -6,6 +6,8 @@
 
 use std::env;
 
+use crate::collectors::BackendKind;
+
 pub const DEFAULT_URL: &str = "http://localhost:8000";
 pub const DEFAULT_INTERVAL: f64 = 1.0;
 
@@ -23,6 +25,8 @@ pub struct AppConfig {
     pub interval: f64,
     pub history_len: usize,
     pub http_timeout: f64,
+    /// Which inference backend to scrape (`vllm`, `sglang`, or `auto`).
+    pub backend: BackendKind,
     /// Activity panel: tail a log file or stream a container's `docker logs`.
     pub log_file: Option<String>,
     pub docker_container: Option<String>,
@@ -44,6 +48,10 @@ impl AppConfig {
             interval: DEFAULT_INTERVAL,
             history_len: HISTORY_LEN,
             http_timeout: HTTP_TIMEOUT,
+            backend: env::var("TOKOS_BACKEND")
+                .ok()
+                .and_then(|s| BackendKind::parse(&s))
+                .unwrap_or_default(),
             log_file: env::var("TOKOS_LOG_FILE").ok(),
             docker_container: env::var("TOKOS_DOCKER").ok(),
         }
@@ -57,6 +65,7 @@ impl Default for AppConfig {
             interval: DEFAULT_INTERVAL,
             history_len: HISTORY_LEN,
             http_timeout: HTTP_TIMEOUT,
+            backend: BackendKind::default(),
             log_file: None,
             docker_container: None,
         }

@@ -12,7 +12,7 @@ use clap::builder::{
 };
 use serde_json::json;
 
-use crate::collectors::vllm::VllmCollector;
+use crate::collectors::{self, Backend};
 use crate::config::AppConfig;
 use crate::state::{History, SERIES_NAMES, Snapshot, monotonic_now};
 
@@ -30,9 +30,10 @@ pub fn cargo_styles() -> Styles {
 
 /// Take two snapshots `interval` apart so rates are populated.
 pub fn collect_pair(config: &AppConfig) -> (Snapshot, Snapshot) {
-    let vllm = VllmCollector::new(config.metrics_url(), config.http_timeout);
+    let collector: Box<dyn Backend> =
+        collectors::make_collector(config.backend, config.metrics_url(), config.http_timeout);
 
-    let once = || Snapshot::new(monotonic_now(), vllm.poll());
+    let once = || Snapshot::new(monotonic_now(), collector.poll());
 
     let first = once();
     thread::sleep(Duration::from_secs_f64(config.interval.min(2.0)));
@@ -56,28 +57,29 @@ pub fn dump_json(config: &AppConfig) -> std::process::ExitCode {
 
     let out = json!({
         "url": config.url,
-        "reachable": second.vllm.reachable,
-        "error": second.vllm.error,
-        "model_name": second.vllm.model_name,
+        "reachable": second.backend.reachable,
+        "error": second.backend.error,
+        "model_name": second.backend.model_name,
         "derived": derived,
         "vllm_info": {
-            "process_start_time": second.vllm.process_start_time,
-            "cache_dtype": second.vllm.cache_dtype,
-            "block_size": second.vllm.block_size,
-            "gpu_memory_utilization": second.vllm.gpu_memory_utilization,
-            "num_gpu_blocks": second.vllm.num_gpu_blocks,
-            "enable_prefix_caching": second.vllm.enable_prefix_caching,
-            "engine_awake": second.vllm.engine_awake,
-            "request_success_total": second.vllm.request_success_total,
+            "process_start_time": second.backend.process_start_time,
+            "cache_dtype": second.backend.cache_dtype,
+            "block_size": second.backend.block_size,
+            "gpu_memory_utilization": second.backend.gpu_memory_utilization,
+            "num_gpu_blocks": second.backend.num_gpu_blocks,
+            "enable_prefix_caching": second.backend.enable_prefix_caching,
+            "engine_awake": second.backend.engine_awake,
+            "request_success_total": second.backend.request_success_total,
+            "backend": config.backend.as_str(),
         },
         "raw_vllm": {
-            "num_requests_running": second.vllm.num_requests_running,
-            "num_requests_waiting": second.vllm.num_requests_waiting,
-            "kv_cache_usage_perc": second.vllm.kv_cache_usage_perc,
-            "generation_tokens_total": second.vllm.generation_tokens_total,
-            "prompt_tokens_total": second.vllm.prompt_tokens_total,
-            "num_preemptions_total": second.vllm.num_preemptions_total,
-            "prefix_cache_hit_rate": second.vllm.prefix_cache_hit_rate(),
+            "num_requests_running": second.backend.num_requests_running,
+            "num_requests_waiting": second.backend.num_requests_waiting,
+            "kv_cache_usage_perc": second.backend.kv_cache_usage_perc,
+            "generation_tokens_total": second.backend.generation_tokens_total,
+            "prompt_tokens_total": second.backend.prompt_tokens_total,
+            "num_preemptions_total": second.backend.num_preemptions_total,
+            "prefix_cache_hit_rate": second.backend.prefix_cache_hit_rate(),
         },
     });
 
