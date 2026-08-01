@@ -1,5 +1,5 @@
-//! `tokos` — a btop-style terminal UI for monitoring a vLLM instance in
-//! real time, built on ratatui.
+//! `tokos` — a btop-style terminal UI for monitoring an inference backend
+//! in real time, built on ratatui.
 
 // Many helpers (formatters, Series accessors, histogram_quantile, etc.) are
 // kept for unit tests even though
@@ -23,7 +23,7 @@ mod state;
 mod ui;
 
 use crate::collectors::BackendKind;
-/// A btop-style TUI for monitoring a vLLM instance.
+/// A btop-style TUI for monitoring an inference backend.
 #[derive(Parser)]
 #[command(name = "tokos", version, about, styles = cli::cargo_styles(), args_conflicts_with_subcommands = true)]
 struct Cli {
@@ -36,18 +36,19 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Launch the terminal UI against a live vLLM `/metrics` endpoint.
+    /// Launch the terminal UI against a live inference backend `/metrics`
+    /// endpoint.
     Run(RunArgs),
 
-    /// Start a mock vLLM server that serves a synthetic `/metrics` endpoint
-    /// for testing `tokos` itself.
+    /// Start a mock inference server that serves a synthetic `/metrics`
+    /// endpoint for testing `tokos` itself.
     MockServer(MockServerArgs),
 }
 
 /// Arguments for the `run` subcommand (the default).
 #[derive(Args, Clone)]
 struct RunArgs {
-    /// vLLM base URL (env TOKOS_URL)
+    /// inference server base URL (env TOKOS_URL)
     #[arg(long, env = "TOKOS_URL", default_value = DEFAULT_URL)]
     url: String,
 
@@ -59,7 +60,7 @@ struct RunArgs {
     #[arg(long, env = "TOKOS_BACKEND", value_parser = parse_backend, default_value = "auto")]
     backend: BackendKind,
 
-    /// tail this vLLM log file for the requests panel (env TOKOS_LOG_FILE)
+    /// tail this request log file for the requests panel (env TOKOS_LOG_FILE)
     #[arg(long, env = "TOKOS_LOG_FILE")]
     log_file: Option<String>,
 
