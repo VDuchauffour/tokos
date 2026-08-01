@@ -478,16 +478,25 @@ pub fn run(config: MockServerConfig) -> std::process::ExitCode {
     let stop = Arc::new(AtomicBool::new(false));
 
     if config.auto_traffic {
-        let st = Arc::clone(&state);
         let cfg = config.clone();
         let stop = Arc::clone(&stop);
         thread::spawn(move || {
-            let mut rng = Rng::new();
+            let connect_host: String = if cfg.host == "0.0.0.0" {
+                "127.0.0.1".to_string()
+            } else {
+                cfg.host.clone()
+            };
             let interval = cfg.request_latency.max(0.1);
             while !stop.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_secs_f64(interval));
-                simulate_request_with(&mut rng, &st, &cfg);
-                info!("POST /v1/chat/completions");
+                // The handler also sleeps `request_latency`, so the effective
+                // request period is `interval` + `request_latency`.
+                if let Err(e) = send_chat_completion(&connect_host, cfg.port, &cfg.model) {
+                    info!(
+                        "auto-traffic request to {connect_host}:{} failed: {e}",
+                        cfg.port
+                    );
+                }
             }
         });
     }
@@ -568,8 +577,8 @@ fn handle_connection(
         }
     }
 
-    let (status, ctype, body, endpoint) = route(method, path, state, config);
-    info!("{method} {path} -> {status} [{endpoint}]");
+    let (status, ctype, body) = route(method, path, state, config);
+    info!("{method} {path} {status}");
     write_response(&mut stream, status, ctype, &body)
 }
 
@@ -578,20 +587,19 @@ fn route(
     path: &str,
     state: &Arc<Mutex<State>>,
     config: &MockServerConfig,
-) -> (u16, &'static str, String, &'static str) {
+) -> (u16, &'static str, String) {
     if method == "OPTIONS" {
-        return (204, "text/plain", String::new(), "cors_preflight");
+        return (204, "text/plain", String::new());
     }
     match (method, path) {
         ("GET", "/metrics") => {
             let body = render_metrics(state);
-            (200, "text/plain; version=0.0.4", body, "metrics")
+            (200, "text/plain; version=0.0.4", body)
         }
         ("GET", "/health") => (
             200,
             "application/json",
             json!({"status": "healthy"}).to_string(),
-            "health",
         ),
         ("GET", "/v1/models") => (
             200,
@@ -605,7 +613,6 @@ fn route(
                 }]
             })
             .to_string(),
-            "models",
         ),
         ("POST", "/v1/chat/completions") | ("POST", "/v1/completions") => {
             // Simulate inference latency, then update metrics.
@@ -630,14 +637,12 @@ fn route(
                     }
                 })
                 .to_string(),
-                "completions",
             )
         }
         _ => (
             404,
             "application/json",
             json!({"error": {"message": "Not Found", "type": "not_found_error"}}).to_string(),
-            "not_found",
         ),
     }
 }
@@ -648,13 +653,7 @@ fn write_response(
     content_type: &str,
     body: &str,
 ) -> std::io::Result<()> {
-    let reason = match status {
-        200 => "OK",
-        204 => "No Content",
-        404 => "Not Found",
-        _ => "OK",
-    };
-    let mut header = format!("HTTP/1.1 {status} {reason}\r\n");
+    let mut header = format!("HTTP/1.1 {status}\r\n");
     header.push_str(&format!("Content-Type: {content_type}\r\n"));
     header.push_str(&format!("Content-Length: {}\r\n", body.len()));
     header.push_str("Access-Control-Allow-Origin: *\r\n");
@@ -667,6 +666,36 @@ fn write_response(
         stream.write_all(body.as_bytes())?;
     }
     stream.flush()
+}
+
+fn send_chat_completion(host: &str, port: u16, model: &str) -> std::io::Result<()> {
+    let body = json!({
+        "model": model,
+        "messages": [{"role": "user", "content": "Hello from tokos auto-traffic"}],
+        "max_tokens": 16,
+    })
+    .to_string();
+
+    let mut request = String::with_capacity(256 + body.len());
+    request.push_str("POST /v1/chat/completions HTTP/1.1\r\n");
+    request.push_str(&format!("Host: {host}:{port}\r\n"));
+    request.push_str("Content-Type: application/json\r\n");
+    request.push_str(&format!("Content-Length: {}\r\n", body.len()));
+    request.push_str("Connection: close\r\n\r\n");
+    request.push_str(&body);
+
+    let mut stream = TcpStream::connect((host, port))?;
+    stream.set_write_timeout(Some(Duration::from_secs(10)))?;
+    stream.set_read_timeout(Some(Duration::from_secs(30)))?;
+    stream.write_all(request.as_bytes())?;
+    let mut sink = [0u8; 1024];
+    loop {
+        match stream.read(&mut sink) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
