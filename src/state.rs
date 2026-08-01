@@ -96,7 +96,7 @@ impl Default for Histogram {
 
 /// Raw current values pulled from one /metrics scrape.
 #[derive(Clone, Debug)]
-pub struct VllmSnapshot {
+pub struct BackendSnapshot {
     pub reachable: bool,
     pub error: Option<String>,
     pub model_name: Option<String>,
@@ -138,7 +138,7 @@ pub struct VllmSnapshot {
     pub decode_time: Histogram,
 }
 
-impl VllmSnapshot {
+impl BackendSnapshot {
     pub fn new() -> Self {
         Self::default()
     }
@@ -152,7 +152,7 @@ impl VllmSnapshot {
     }
 }
 
-impl Default for VllmSnapshot {
+impl Default for BackendSnapshot {
     fn default() -> Self {
         Self {
             reachable: false,
@@ -231,16 +231,16 @@ impl MergedLogEntry {
 #[derive(Clone, Debug)]
 pub struct Snapshot {
     pub monotonic: f64,
-    pub vllm: VllmSnapshot,
+    pub backend: BackendSnapshot,
     pub merged_log: Vec<MergedLogEntry>,
     pub access_error: Option<String>,
 }
 
 impl Snapshot {
-    pub fn new(monotonic: f64, vllm: VllmSnapshot) -> Self {
+    pub fn new(monotonic: f64, backend: BackendSnapshot) -> Self {
         Self {
             monotonic,
-            vllm,
+            backend,
             merged_log: Vec::new(),
             access_error: None,
         }
@@ -409,7 +409,7 @@ impl History {
 
     pub fn update(&mut self, snap: Snapshot) {
         let prev = self.prev.take();
-        let v = &snap.vllm;
+        let v = &snap.backend;
 
         let (
             gen_rate,
@@ -423,24 +423,24 @@ impl History {
             req_prefill,
             req_decode,
         ) = match &prev {
-            Some(p) if p.vllm.reachable && v.reachable => {
+            Some(p) if p.backend.reachable && v.reachable => {
                 let (pt, ct) = (p.monotonic, snap.monotonic);
                 let gen_rate = compute_rate(
-                    p.vllm.generation_tokens_total,
+                    p.backend.generation_tokens_total,
                     pt,
                     v.generation_tokens_total,
                     ct,
                 );
                 let prompt =
-                    compute_rate(p.vllm.prompt_tokens_total, pt, v.prompt_tokens_total, ct);
-                let ttft = histogram_recent_avg(&p.vllm.ttft, &v.ttft);
-                let tpot = histogram_recent_avg(&p.vllm.inter_token, &v.inter_token);
-                let e2e = histogram_recent_avg(&p.vllm.e2e, &v.e2e);
-                let queue = histogram_recent_avg(&p.vllm.queue_time, &v.queue_time);
-                let req_prompt = histogram_avg(&p.vllm.req_prompt_tokens, &v.req_prompt_tokens);
-                let req_gen = histogram_avg(&p.vllm.req_gen_tokens, &v.req_gen_tokens);
-                let req_prefill = histogram_avg(&p.vllm.prefill_time, &v.prefill_time);
-                let req_decode = histogram_avg(&p.vllm.decode_time, &v.decode_time);
+                    compute_rate(p.backend.prompt_tokens_total, pt, v.prompt_tokens_total, ct);
+                let ttft = histogram_recent_avg(&p.backend.ttft, &v.ttft);
+                let tpot = histogram_recent_avg(&p.backend.inter_token, &v.inter_token);
+                let e2e = histogram_recent_avg(&p.backend.e2e, &v.e2e);
+                let queue = histogram_recent_avg(&p.backend.queue_time, &v.queue_time);
+                let req_prompt = histogram_avg(&p.backend.req_prompt_tokens, &v.req_prompt_tokens);
+                let req_gen = histogram_avg(&p.backend.req_gen_tokens, &v.req_gen_tokens);
+                let req_prefill = histogram_avg(&p.backend.prefill_time, &v.prefill_time);
+                let req_decode = histogram_avg(&p.backend.decode_time, &v.decode_time);
                 (
                     gen_rate,
                     prompt,
@@ -475,6 +475,13 @@ impl History {
 
         self.update_windows(snap.monotonic);
         self.prev = Some(snap);
+    }
+
+    /// Reset all series, derived values, EMA windows, and the previous-snapshot
+    /// baseline. Called when the backend kind changes (vLLM ↔ SGLang) so stale
+    /// series from the old metric names don't pollute charts.
+    pub fn clear(&mut self) {
+        *self = Self::new(self.maxlen);
     }
 
     fn set(&mut self, name: &'static str, value: f64) {
@@ -614,11 +621,11 @@ mod tests {
     fn snap(t: f64, gen_total: f64, running: f64) -> Snapshot {
         Snapshot::new(
             t,
-            VllmSnapshot {
+            BackendSnapshot {
                 reachable: true,
                 generation_tokens_total: gen_total,
                 num_requests_running: running,
-                ..VllmSnapshot::default()
+                ..BackendSnapshot::default()
             },
         )
     }
@@ -631,6 +638,26 @@ mod tests {
         assert_eq!(*h.derived.get("gen_tok_s").unwrap(), 100.0);
         assert_eq!(*h.derived.get("running").unwrap(), 2.0);
         assert_eq!(h.series["gen_tok_s"].values(), vec![0.0, 100.0]);
+    }
+
+    #[test]
+    fn history_clear_resets_all() {
+        let mut h = History::new(HISTORY_LEN);
+        h.update(snap(0.0, 1000.0, 1.0));
+        h.update(snap(2.0, 1200.0, 2.0));
+        assert!(!h.series["gen_tok_s"].is_empty());
+
+        h.clear();
+
+        for name in SERIES_NAMES {
+            assert!(h.series[name].is_empty(), "{name} not cleared");
+            assert_eq!(
+                *h.derived.get(name).unwrap(),
+                0.0,
+                "{name} derived not reset"
+            );
+            assert_eq!(*h.avg.get(name).unwrap(), [0.0; 3], "{name} avg not reset");
+        }
     }
 
     #[test]
