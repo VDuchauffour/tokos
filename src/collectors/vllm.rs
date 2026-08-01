@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::time::Duration;
 
+use tracing::instrument;
+
 use crate::state::{Histogram, VllmSnapshot};
 
 /// Scalar series we read directly by sample name (summed across engine labels).
@@ -165,6 +167,7 @@ fn parse_line(line: &str) -> Option<Sample<'_>> {
 }
 
 /// Parse Prometheus exposition text into a [`VllmSnapshot`].
+#[instrument(skip(text), fields(bytes = text.len()))]
 pub fn parse_metrics(text: &str) -> VllmSnapshot {
     let mut snap = VllmSnapshot {
         reachable: true,
@@ -304,6 +307,7 @@ impl VllmCollector {
         }
     }
 
+    #[instrument(skip(self), fields(url = %self.metrics_url))]
     pub fn poll(&self) -> VllmSnapshot {
         let resp = ureq::get(&self.metrics_url)
             .set("Accept", "text/plain")
@@ -312,6 +316,7 @@ impl VllmCollector {
         let resp = match resp {
             Ok(r) => r,
             Err(e) => {
+                tracing::error!(error = %short_error(&e), "metrics fetch failed");
                 return VllmSnapshot {
                     reachable: false,
                     error: Some(short_error(&e)),
@@ -324,6 +329,7 @@ impl VllmCollector {
         let mut reader = resp.into_reader().take((MAX_METRICS_BYTES as u64) + 1);
         let mut buf = Vec::new();
         if let Err(e) = reader.read_to_end(&mut buf) {
+            tracing::error!(error = %e, "metrics body read failed");
             return VllmSnapshot {
                 reachable: false,
                 error: Some(format!("{e}")),
@@ -331,6 +337,11 @@ impl VllmCollector {
             };
         }
         if buf.len() > MAX_METRICS_BYTES {
+            tracing::error!(
+                size = buf.len(),
+                limit = MAX_METRICS_BYTES,
+                "metrics body exceeded size limit"
+            );
             return VllmSnapshot {
                 reachable: false,
                 error: Some(format!("/metrics body exceeded {MAX_METRICS_BYTES} bytes")),
@@ -338,6 +349,7 @@ impl VllmCollector {
             };
         }
         let text = String::from_utf8_lossy(&buf).into_owned();
+        tracing::debug!(bytes = text.len(), "metrics fetched");
         parse_metrics(&text)
     }
 }

@@ -64,11 +64,13 @@ impl Poller {
         let metrics_url = config.metrics_url();
         let timeout = config.http_timeout;
         let handle = thread::spawn(move || {
+            let _span = tracing::info_span!("poller", url = %metrics_url).entered();
             let vllm = VllmCollector::new(metrics_url, timeout);
             loop {
                 if st.stop.load(Ordering::Relaxed) {
                     break;
                 }
+                tracing::trace!("polling metrics");
                 if !st.paused.load(Ordering::Relaxed) {
                     let (merged, err) = match &tailer {
                         Some(t) => (t.merged_log(None), t.error()),
