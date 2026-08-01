@@ -14,6 +14,14 @@ Supports [vLLM](https://github.com/vllm-project/vllm) and [SGLang](https://githu
 - **Headless JSON** — `--dump-json` for scripting and CI
 - **Mock server** — `mock-server --generate-traffic` for testing without a deployment
 
+## Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/VDuchauffour/tokos/main/install.sh | bash
+```
+
+or `cargo install tokos` · [binaries](https://github.com/VDuchauffour/tokos/releases)
+
 ## Usage
 
 `tokos` has three subcommands: `run` launches the TUI against a live
@@ -119,4 +127,4 @@ just ci   # fmt-check + lint-strict + test
 
 2. The [release-drafter](.github/workflows/release-drafter.yml) workflow auto-drafts release notes on every push to `main`.
 
-3. Publish the drafted release on GitHub to trigger the [publish](.github/workflows/publish.yml) workflow, which publishes the crate to crates.io.
+3. Publish the drafted release on GitHub to trigger the [release](.github/workflows/release.yml) workflow, which publishes the crate to crates.io and uploads prebuilt binaries to the release.
