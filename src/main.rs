@@ -85,59 +85,77 @@ struct RunArgs {
 }
 
 /// Arguments for the `mock-server` subcommand. Mirror guidellm's flags.
+///
+/// Every field also reads from a `TOKOS_MOCK_*` environment variable, so the
+/// mock server can be configured without touching the CLI — useful for
+/// containers and test harnesses. CLI flags take precedence over env vars,
+/// which take precedence over the defaults.
 #[derive(Parser, Clone)]
 struct MockServerArgs {
     /// host address to bind the server to
-    #[arg(long, default_value = "127.0.0.1")]
+    /// (env TOKOS_MOCK_HOST; default: 127.0.0.1)
+    #[arg(long, env = "TOKOS_MOCK_HOST", default_value = "127.0.0.1")]
     host: String,
 
     /// port to bind the server to
-    #[arg(long, default_value_t = 8000)]
+    /// (env TOKOS_MOCK_PORT; default: 8000)
+    #[arg(long, env = "TOKOS_MOCK_PORT", default_value_t = 8000)]
     port: u16,
 
     /// name of the model to mock
-    #[arg(long, default_value = DEFAULT_MODEL)]
+    /// (env TOKOS_MOCK_MODEL; default: GLM-5.2)
+    #[arg(long, env = "TOKOS_MOCK_MODEL", default_value = DEFAULT_MODEL)]
     model: String,
 
     /// base request latency in seconds for non-streaming responses
-    #[arg(long, default_value_t = 3.0)]
+    /// (env TOKOS_MOCK_REQUEST_LATENCY; default: 3.0)
+    #[arg(long, env = "TOKOS_MOCK_REQUEST_LATENCY", default_value_t = 3.0)]
     request_latency: f64,
 
     /// standard deviation for request latency
-    #[arg(long, default_value_t = 0.0)]
+    /// (env TOKOS_MOCK_REQUEST_LATENCY_STD; default: 0.0)
+    #[arg(long, env = "TOKOS_MOCK_REQUEST_LATENCY_STD", default_value_t = 0.0)]
     request_latency_std: f64,
 
     /// time to first token in milliseconds for streaming responses
-    #[arg(long, default_value_t = 150.0)]
+    /// (env TOKOS_MOCK_TTFT_MS; default: 150.0)
+    #[arg(long, env = "TOKOS_MOCK_TTFT_MS", default_value_t = 150.0)]
     ttft_ms: f64,
 
     /// standard deviation for time to first token
-    #[arg(long, default_value_t = 0.0)]
+    /// (env TOKOS_MOCK_TTFT_MS_STD; default: 0.0)
+    #[arg(long, env = "TOKOS_MOCK_TTFT_MS_STD", default_value_t = 0.0)]
     ttft_ms_std: f64,
 
     /// inter-token latency in milliseconds for streaming responses
-    #[arg(long, default_value_t = 10.0)]
+    /// (env TOKOS_MOCK_ITL_MS; default: 10.0)
+    #[arg(long, env = "TOKOS_MOCK_ITL_MS", default_value_t = 10.0)]
     itl_ms: f64,
 
     /// standard deviation for inter-token latency
-    #[arg(long, default_value_t = 0.0)]
+    /// (env TOKOS_MOCK_ITL_MS_STD; default: 0.0)
+    #[arg(long, env = "TOKOS_MOCK_ITL_MS_STD", default_value_t = 0.0)]
     itl_ms_std: f64,
 
     /// number of output tokens to generate per request
-    #[arg(long, default_value_t = 128)]
+    /// (env TOKOS_MOCK_OUTPUT_TOKENS; default: 128)
+    #[arg(long, env = "TOKOS_MOCK_OUTPUT_TOKENS", default_value_t = 128)]
     output_tokens: u32,
 
     /// standard deviation for output token count
-    #[arg(long, default_value_t = 0.0)]
+    /// (env TOKOS_MOCK_OUTPUT_TOKENS_STD; default: 0.0)
+    #[arg(long, env = "TOKOS_MOCK_OUTPUT_TOKENS_STD", default_value_t = 0.0)]
     output_tokens_std: f64,
 
     /// spawn a background thread that simulates requests so metrics move
     /// without external traffic
-    #[arg(long)]
+    /// (env TOKOS_MOCK_AUTO_TRAFFIC; default: false)
+    #[arg(long, env = "TOKOS_MOCK_AUTO_TRAFFIC")]
     auto_traffic: bool,
 
     /// disable colored log output
-    #[arg(long)]
+    /// (env TOKOS_MOCK_NO_COLOR; default: false)
+    #[arg(long, env = "TOKOS_MOCK_NO_COLOR")]
     no_color: bool,
 }
 

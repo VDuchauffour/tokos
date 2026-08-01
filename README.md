@@ -6,13 +6,22 @@ A lightweight terminal UI for real-time monitoring of inference server metrics.
 
 ## Features
 
-- **CLI parsing** with [`clap`](https://github.com/clap-rs/clap)
-- **Error handling** with [`anyhow`](https://github.com/dtijv/anyhow)
-- **Dev container** with Rust, `just`, `cargo-tarpaulin`, and `pre-commit`
-- **CI/CD** via GitHub Actions (format, lint, test, coverage, draft releases)
-- **Task runner** via [`just`](https://github.com/casey/just)
-- **Pre-commit hooks** for formatting and linting
-- **Renovate** config for automated dependency updates
+- **Real-time TUI** — btop-style terminal dashboard (`ratatui` + `crossterm`)
+  with braille charts and rounded box-drawing panels for live vLLM metrics
+- **Prometheus scraping** — polls vLLM `/metrics` exposition text and derives
+  rates, histogram quantiles (TTFT, ITL, e2e and queue latency), and prefix-cache
+  hit ratios from raw counters and buckets
+- **Load-average windows** — Unix-style 1/5/15-minute EMA series over throughput
+  and latency, mirroring `uptime`'s load-average semantics
+- **Switchable views** — `overview`, `1·5·15`, and `requests` layouts cycled with
+  the number keys or `Tab`
+- **Live request feed** — tails a vLLM request log file or `docker logs -f` to
+  stream per-request entries from `--enable-log-requests` output
+- **Headless JSON mode** — `--dump-json` collects two snapshots and prints the
+  derived metrics as JSON with no TTY, handy for scripting and CI
+- **Built-in mock server** — `mock-server` serves a synthetic vLLM (`/metrics`,
+  `/v1/models`, `/v1/chat/completions`) with `--auto-traffic` to exercise the TUI
+  without a real deployment
 
 ## Usage
 
@@ -55,11 +64,32 @@ Common `run` flags:
 | `--docker`    | `TOKOS_DOCKER`   |                         | container to `docker logs -f`          |
 | `--dump-json` |                  | `false`                 | print derived metrics as JSON and exit |
 
-`mock-server` flags mirror [guidellm](https://github.com/vllm-project/guidellm):
-`--host`, `--port`, `--model`, `--request-latency`, `--request-latency-std`,
-`--ttft-ms`, `--ttft-ms-std`, `--itl-ms`, `--itl-ms-std`, `--output-tokens`,
-`--output-tokens-std`, and `--auto-traffic`. Run `tokos mock-server --help` for
-the full list.
+`mock-server` flags mirror [guidellm](https://github.com/vllm-project/guidellm)
+and every flag also reads from a `TOKOS_MOCK_*` env var (CLI flag wins over env,
+env wins over default):
+
+| Flag                    | Env                              | Default     | Description                                |
+| ----------------------- | -------------------------------- | ----------- | ------------------------------------------ |
+| `--host`                | `TOKOS_MOCK_HOST`                | `127.0.0.1` | bind address                               |
+| `--port`                | `TOKOS_MOCK_PORT`                | `8000`      | bind port                                  |
+| `--model`               | `TOKOS_MOCK_MODEL`               | `GLM-5.2`   | model name to advertise                    |
+| `--request-latency`     | `TOKOS_MOCK_REQUEST_LATENCY`     | `3.0`       | base request latency in seconds            |
+| `--request-latency-std` | `TOKOS_MOCK_REQUEST_LATENCY_STD` | `0.0`       | stddev for request latency                 |
+| `--ttft-ms`             | `TOKOS_MOCK_TTFT_MS`             | `150.0`     | time to first token in ms                  |
+| `--ttft-ms-std`         | `TOKOS_MOCK_TTFT_MS_STD`         | `0.0`       | stddev for TTFT                            |
+| `--itl-ms`              | `TOKOS_MOCK_ITL_MS`              | `10.0`      | inter-token latency in ms                  |
+| `--itl-ms-std`          | `TOKOS_MOCK_ITL_MS_STD`          | `0.0`       | stddev for ITL                             |
+| `--output-tokens`       | `TOKOS_MOCK_OUTPUT_TOKENS`       | `128`       | output tokens per request                  |
+| `--output-tokens-std`   | `TOKOS_MOCK_OUTPUT_TOKENS_STD`   | `0.0`       | stddev for output token count              |
+| `--auto-traffic`        | `TOKOS_MOCK_AUTO_TRAFFIC`        | `false`     | spawn a background thread driving requests |
+| `--no-color`            | `TOKOS_MOCK_NO_COLOR`            | `false`     | disable colored log output                 |
+
+So `request-latency = 2s` can be set either way:
+
+```sh
+tokos mock-server --request-latency 2.0
+TOKOS_MOCK_REQUEST_LATENCY=2.0 tokos mock-server
+```
 
 ## Getting Started
 
