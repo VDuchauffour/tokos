@@ -46,13 +46,12 @@ All dev tasks go through `just` (see `justfile`). Non-obvious points:
 
 ## Architecture
 
-Entry flow (`src/main.rs`): clap-derive `Cli` with two subcommands — `run`
-(the default) and `mock-server`. `run`'s flags are flattened to the top level
-via `args_conflicts_with_subcommands`, so `tokos --url X` is shorthand for
-`tokos run --url X` and bare `tokos` launches the TUI. `run` dispatches to
-either headless `cli::dump_json` (collect two snapshots, print JSON, exit, no
-TTY needed) or `ui::app::App::run` (TUI render loop). `mock-server` calls
-`mock_server::run`.
+Entry flow (`src/main.rs`): clap-derive `Cli` with three subcommands — `run`,
+`mock-server`, and `completions` — none is the default, so a subcommand is
+always required. `run` dispatches to either headless `cli::dump_json` (collect
+two snapshots, print JSON, exit, no TTY needed) or `ui::app::App::run` (TUI
+render loop). `mock-server` calls `mock_server::run`. `completions` prints
+shell completion scripts via `clap_complete::generate`.
 
 Module ownership:
 

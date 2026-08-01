@@ -6,9 +6,11 @@
 // the binary entry point doesn't call them directly.
 #![allow(dead_code)]
 
+use std::io::stdout;
 use std::process::ExitCode;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand};
+use clap_complete::{Shell, generate};
 
 use crate::config::{DEFAULT_INTERVAL, DEFAULT_URL};
 use crate::logging::LogFormat;
@@ -25,13 +27,10 @@ mod ui;
 use crate::collectors::BackendKind;
 /// A btop-style TUI for monitoring an inference backend.
 #[derive(Parser)]
-#[command(name = "tokos", version, about, styles = cli::cargo_styles(), args_conflicts_with_subcommands = true)]
+#[command(name = "tokos", version, about, styles = cli::cargo_styles())]
 struct Cli {
-    #[command(flatten)]
-    run: RunArgs,
-
     #[command(subcommand)]
-    command: Option<Command>,
+    command: Command,
 }
 
 #[derive(Subcommand)]
@@ -43,9 +42,12 @@ enum Command {
     /// Start a mock inference server that serves a synthetic `/metrics`
     /// endpoint for testing `tokos` itself.
     MockServer(MockServerArgs),
+
+    /// Generate shell completion scripts for `tokos`.
+    Completions(CompletionsArgs),
 }
 
-/// Arguments for the `run` subcommand (the default).
+/// Arguments for the `run` subcommand.
 #[derive(Args, Clone)]
 struct RunArgs {
     /// inference server base URL (env TOKOS_URL)
@@ -190,6 +192,15 @@ impl From<MockServerArgs> for mock_server::MockServerConfig {
     }
 }
 
+/// Arguments for the `completions` subcommand.
+#[derive(Args)]
+struct CompletionsArgs {
+    /// Shell to generate completions for. If omitted, auto-detect from
+    /// `$SHELL` (falls back to PowerShell on Windows).
+    #[arg(value_enum)]
+    shell: Option<Shell>,
+}
+
 fn build_config(args: RunArgs) -> config::AppConfig {
     config::AppConfig {
         url: args.url,
@@ -254,11 +265,27 @@ fn run(args: RunArgs) -> ExitCode {
     }
 }
 
+/// Generate shell completion scripts and print to stdout. Falls back to
+/// `Shell::from_env()` (the `$SHELL` env var) when no shell is given.
+fn completions(args: CompletionsArgs) -> ExitCode {
+    let Some(shell) = args.shell.or_else(Shell::from_env) else {
+        eprintln!(
+            "could not detect shell from $SHELL; specify one explicitly: \
+             bash, elvish, fish, powershell, zsh"
+        );
+        return ExitCode::FAILURE;
+    };
+    let mut cmd = Cli::command();
+    let bin_name = cmd.get_name().to_string();
+    generate(shell, &mut cmd, bin_name, &mut stdout());
+    ExitCode::SUCCESS
+}
+
 fn main() -> ExitCode {
     let args = Cli::parse();
     match args.command {
-        Some(Command::Run(r)) => run(r),
-        Some(Command::MockServer(m)) => mock_server::run(m.into()),
-        None => run(args.run),
+        Command::Run(r) => run(r),
+        Command::MockServer(m) => mock_server::run(m.into()),
+        Command::Completions(c) => completions(c),
     }
 }
