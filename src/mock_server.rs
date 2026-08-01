@@ -480,8 +480,8 @@ pub fn run(config: MockServerConfig) -> std::process::ExitCode {
             let interval = cfg.request_latency.max(0.1);
             while !stop.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_secs_f64(interval));
-                let (prompt, output) = simulate_request_with(&mut rng, &st, &cfg);
-                info!("auto-traffic request (prompt={prompt}, output={output})");
+                simulate_request_with(&mut rng, &st, &cfg);
+                info!("POST /v1/chat/completions");
             }
         });
     }
