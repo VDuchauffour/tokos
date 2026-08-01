@@ -123,6 +123,29 @@ impl HistAcc {
         self.sum += v;
         self.count += 1.0;
     }
+
+    /// Bucket lines build their own labels (they carry `le`); `lbl` is the
+    /// `{engine="0",model_name="..."}` set reused for the `_count`/`_sum` lines.
+    fn render(&self, out: &mut String, base: &str, help: &str, lbl: &str, model: &str) {
+        writeln!(out, "# HELP {base} {help}").unwrap();
+        writeln!(out, "# TYPE {base} histogram").unwrap();
+        for (i, &le) in self.bounds.iter().enumerate() {
+            writeln!(
+                out,
+                r#"{base}_bucket{{engine="0",le="{le}",model_name="{model}"}} {}"#,
+                fmt_f64(self.buckets[i])
+            )
+            .unwrap();
+        }
+        writeln!(
+            out,
+            r#"{base}_bucket{{engine="0",le="+Inf",model_name="{model}"}} {}"#,
+            fmt_f64(self.buckets[self.bounds.len()])
+        )
+        .unwrap();
+        writeln!(out, r#"{base}_count{lbl} {}"#, fmt_f64(self.count)).unwrap();
+        writeln!(out, r#"{base}_sum{lbl} {}"#, fmt_f64(self.sum)).unwrap();
+    }
 }
 
 /// Mutable metrics state shared between the HTTP handlers and the auto-traffic
@@ -384,24 +407,7 @@ fn render_metrics(state: &Mutex<State>) -> String {
         ),
     ];
     for &(base, acc, help) in hists {
-        writeln!(out, "# HELP {base} {help}").unwrap();
-        writeln!(out, "# TYPE {base} histogram").unwrap();
-        for (i, &le) in acc.bounds.iter().enumerate() {
-            writeln!(
-                out,
-                r#"{base}_bucket{{engine="0",le="{le}",model_name="{model}"}} {}"#,
-                fmt_f64(acc.buckets[i])
-            )
-            .unwrap();
-        }
-        writeln!(
-            out,
-            r#"{base}_bucket{{engine="0",le="+Inf",model_name="{model}"}} {}"#,
-            fmt_f64(acc.buckets[acc.bounds.len()])
-        )
-        .unwrap();
-        writeln!(out, r#"{base}_count{lbl} {}"#, fmt_f64(acc.count)).unwrap();
-        writeln!(out, r#"{base}_sum{lbl} {}"#, fmt_f64(acc.sum)).unwrap();
+        acc.render(&mut out, base, help, &lbl, model);
     }
 
     // --- engine config / sleep state (info-style gauges) ---
