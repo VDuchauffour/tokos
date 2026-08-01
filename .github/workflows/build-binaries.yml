@@ -1,4 +1,4 @@
-name: Release
+name: Build binaries
 
 on:
   release:
@@ -7,29 +7,8 @@ on:
 
 permissions:
   contents: write
-  id-token: write
 
 jobs:
-  publish-to-crates-io:
-    name: Publish to crates.io
-    if: startsWith(github.ref, 'refs/tags')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache cargo registry and build
-        uses: Swatinem/rust-cache@v2
-      - name: Install just
-        uses: extractions/setup-just@v3
-      - name: Build project
-        run: just release
-      - name: Log in to crates.io
-        run: cargo login ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Publish to crates.io
-        run: cargo publish
-
   build-and-upload:
     name: Build and upload (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
@@ -73,10 +52,10 @@ jobs:
           cargo install cross
           cross build --release --target ${{ matrix.target }}
       - name: Package
-        run: tar -C target/${{ matrix.target }}/release -czf tokos-${{ matrix.target }}.tar.gz
-          ${{ matrix.bin }}
+        run: tar -C target/${{ matrix.target }}/release -czf ${{ matrix.bin }}-${{
+          matrix.target }}.tar.gz ${{ matrix.bin }}
       - name: Upload to release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.ref_name }}" "tokos-${{ matrix.target }}.tar.gz"
-          --clobber
+        run: gh release upload "${{ github.ref_name }}" "${{ matrix.bin }}-${{ matrix.target
+          }}.tar.gz" --clobber
