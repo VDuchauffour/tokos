@@ -16,24 +16,16 @@ Supports [vLLM](https://github.com/vllm-project/vllm) and [SGLang](https://githu
 
 ## Usage
 
-`tokos` has two subcommands: `run` (the default) launches the TUI against a
-live vLLM `/metrics` endpoint, and `mock-server` starts a synthetic vLLM
-server for testing the TUI without a real deployment.
-
-`run` is the default subcommand, so its flags are accepted at the top level —
-`tokos --url X` is shorthand for `tokos run --url X`, and bare `tokos` launches
-the TUI with environment-derived defaults.
+`tokos` has three subcommands: `run` launches the TUI against a live
+`/metrics` endpoint, `mock-server` starts a synthetic server for testing
+the TUI without a real deployment, and `completions` prints shell completion
+scripts. A subcommand is always required.
 
 ```sh
-# Launch the TUI (default subcommand)
-tokos
-tokos --url http://localhost:8000 --interval 1
-
-# Explicit form
+# Launch the TUI
 tokos run --url http://localhost:8000 --interval 1
 
 # Headless: collect two snapshots, print derived metrics as JSON, exit
-tokos --dump-json
 tokos run --url http://localhost:8000 --dump-json
 
 # Start a mock vLLM server (serves /metrics, /v1/models, /v1/chat/completions)
@@ -42,7 +34,12 @@ tokos mock-server --backend vllm --port 8000 --model GLM-5.2
 # Start a mock SGLang server
 tokos mock-server --backend sglang --port 30000 --generate-traffic
 # in another terminal:
-tokos --url http://127.0.0.1:30000
+tokos run --url http://127.0.0.1:30000
+
+# Generate shell completions (auto-detects from $SHELL when no shell is given)
+tokos completions >/etc/bash_completion.d/tokos
+tokos completions zsh >~/.zfunc/_tokos
+tokos completions fish >~/.config/fish/completions/tokos.fish
 ```
 
 Common `run` flags:
@@ -86,9 +83,9 @@ TOKOS_MOCK_REQUEST_LATENCY=2.0 tokos mock-server
 ## Usage
 
 ```sh
-tokos --url http://localhost:8000 # auto-detect backend (default)
-tokos --url http://localhost:30000 --backend sglang
-tokos --url http://localhost:8000 --backend vllm
+tokos run --url http://localhost:8000 # auto-detect backend (default)
+tokos run --url http://localhost:30000 --backend sglang
+tokos run --url http://localhost:8000 --backend vllm
 ```
 
 | Flag          | Env              | Default                 | Description                                                         |
