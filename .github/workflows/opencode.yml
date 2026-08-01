@@ -31,6 +31,7 @@ jobs:
         uses: anomalyco/opencode/github@latest
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.github_token }}
         with:
           model: opencode-go/glm-5.2
           use_github_token: true
