@@ -67,7 +67,7 @@ Module ownership:
   Serves `/metrics` (Prometheus exposition text that round-trips through
   `collectors::vllm::parse_metrics`), `/health`, `/v1/models`, and
   `/v1/{chat,}completions`. Simulated requests update counters/histograms;
-  `--auto-traffic` drives them from a background thread. No new deps (no
+  `--generate-traffic` drives them from a background thread. No new deps (no
   `tokio`/`axum`/`rand` — thread-per-connection `std::net` + a xorshift RNG).
 - `src/state.rs` — the largest and most central file. `BackendSnapshot` (raw
   scrape), `History` (ring-buffer series + 1/5/15-min EMA windows), and all

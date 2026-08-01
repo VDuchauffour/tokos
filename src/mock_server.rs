@@ -46,9 +46,9 @@ pub struct MockServerConfig {
     pub itl_ms_std: f64,
     pub output_tokens: u32,
     pub output_tokens_std: f64,
-    /// Spawn a background thread that simulates a request every
+    /// Spawn a background thread that generates a request every
     /// `request_latency` seconds so metrics move without external traffic.
-    pub auto_traffic: bool,
+    pub generate_traffic: bool,
 
     /// Disable colored log output.
     pub no_color: bool,
@@ -68,7 +68,7 @@ impl Default for MockServerConfig {
             itl_ms_std: 0.0,
             output_tokens: 128,
             output_tokens_std: 0.0,
-            auto_traffic: false,
+            generate_traffic: false,
             no_color: false,
         }
     }
@@ -152,7 +152,7 @@ impl HistAcc {
     }
 }
 
-/// Mutable metrics state shared between the HTTP handlers and the auto-traffic
+/// Mutable metrics state shared between the HTTP handlers and the generate-traffic
 /// thread.
 struct State {
     model: String,
@@ -481,7 +481,7 @@ pub fn run(config: MockServerConfig) -> std::process::ExitCode {
     let state = Arc::new(Mutex::new(State::new(config.model.clone())));
     let stop = Arc::new(AtomicBool::new(false));
 
-    if config.auto_traffic {
+    if config.generate_traffic {
         let cfg = config.clone();
         let stop = Arc::clone(&stop);
         thread::spawn(move || {
@@ -497,7 +497,7 @@ pub fn run(config: MockServerConfig) -> std::process::ExitCode {
                 // request period is `interval` + `request_latency`.
                 if let Err(e) = send_chat_completion(&connect_host, cfg.port, &cfg.model) {
                     info!(
-                        "auto-traffic request to {connect_host}:{} failed: {e}",
+                        "generate-traffic request to {connect_host}:{} failed: {e}",
                         cfg.port
                     );
                 }
@@ -506,8 +506,8 @@ pub fn run(config: MockServerConfig) -> std::process::ExitCode {
     }
 
     info!(
-        "listening on http://{} (model={}, auto_traffic={})",
-        addr, config.model, config.auto_traffic
+        "listening on http://{} (model={}, generate_traffic={})",
+        addr, config.model, config.generate_traffic
     );
 
     for stream in listener.incoming() {
@@ -675,7 +675,7 @@ fn write_response(
 fn send_chat_completion(host: &str, port: u16, model: &str) -> std::io::Result<()> {
     let body = json!({
         "model": model,
-        "messages": [{"role": "user", "content": "Hello from tokos auto-traffic"}],
+        "messages": [{"role": "user", "content": "Hello from tokos generate-traffic"}],
         "max_tokens": 16,
     })
     .to_string();

@@ -147,11 +147,11 @@ struct MockServerArgs {
     #[arg(long, env = "TOKOS_MOCK_OUTPUT_TOKENS_STD", default_value_t = 0.0)]
     output_tokens_std: f64,
 
-    /// spawn a background thread that simulates requests so metrics move
+    /// spawn a background thread that generates requests so metrics move
     /// without external traffic
-    /// (env TOKOS_MOCK_AUTO_TRAFFIC; default: false)
-    #[arg(long, env = "TOKOS_MOCK_AUTO_TRAFFIC")]
-    auto_traffic: bool,
+    /// (env TOKOS_MOCK_GENERATE_TRAFFIC; default: false)
+    #[arg(long, env = "TOKOS_MOCK_GENERATE_TRAFFIC")]
+    generate_traffic: bool,
 
     /// disable colored log output
     /// (env TOKOS_MOCK_NO_COLOR; default: false)
@@ -173,7 +173,7 @@ impl From<MockServerArgs> for mock_server::MockServerConfig {
             itl_ms_std: a.itl_ms_std,
             output_tokens: a.output_tokens,
             output_tokens_std: a.output_tokens_std,
-            auto_traffic: a.auto_traffic,
+            generate_traffic: a.generate_traffic,
             no_color: a.no_color,
         }
     }

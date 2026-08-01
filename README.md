@@ -20,7 +20,7 @@ A lightweight terminal UI for real-time monitoring of inference server metrics.
 - **Headless JSON mode** — `--dump-json` collects two snapshots and prints the
   derived metrics as JSON with no TTY, handy for scripting and CI
 - **Built-in mock server** — `mock-server` serves a synthetic vLLM (`/metrics`,
-  `/v1/models`, `/v1/chat/completions`) with `--auto-traffic` to exercise the TUI
+  `/v1/models`, `/v1/chat/completions`) with `--generate-traffic` to exercise the TUI
   without a real deployment
 
 ## Usage
@@ -49,7 +49,7 @@ tokos run --url http://localhost:8000 --dump-json
 tokos mock-server --port 8000 --model GLM-5.2
 
 # Drive the mock with synthetic traffic so the TUI shows live movement
-tokos mock-server --port 8000 --auto-traffic
+tokos mock-server --port 8000 --generate-traffic
 # in another terminal:
 tokos --url http://127.0.0.1:8000
 ```
@@ -81,7 +81,7 @@ env wins over default):
 | `--itl-ms-std`          | `TOKOS_MOCK_ITL_MS_STD`          | `0.0`       | stddev for ITL                             |
 | `--output-tokens`       | `TOKOS_MOCK_OUTPUT_TOKENS`       | `128`       | output tokens per request                  |
 | `--output-tokens-std`   | `TOKOS_MOCK_OUTPUT_TOKENS_STD`   | `0.0`       | stddev for output token count              |
-| `--auto-traffic`        | `TOKOS_MOCK_AUTO_TRAFFIC`        | `false`     | spawn a background thread driving requests |
+| `--generate-traffic`    | `TOKOS_MOCK_GENERATE_TRAFFIC`    | `false`     | spawn a background thread driving requests |
 | `--no-color`            | `TOKOS_MOCK_NO_COLOR`            | `false`     | disable colored log output                 |
 
 So `request-latency = 2s` can be set either way:
