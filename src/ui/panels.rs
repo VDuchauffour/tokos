@@ -349,10 +349,10 @@ pub fn draw_throughput(
     let gen_pk = gen_series.iter().cloned().fold(0.0_f64, f64::max);
     let prompt_pk = prompt.iter().cloned().fold(0.0_f64, f64::max);
     let rows: [(&str, Pair, String); 4] = [
-        ("gen", Pair::Dim, big_number(gen_now, " tok/s")),
-        ("gen pk", Pair::Dim, big_number(gen_pk, " tok/s")),
-        ("prompt", Pair::Dim, big_number(prompt_now, " tok/s")),
-        ("prm pk", Pair::Dim, big_number(prompt_pk, " tok/s")),
+        ("gen now", Pair::Dim, big_number(gen_now, " tok/s")),
+        ("gen peak", Pair::Dim, big_number(gen_pk, " tok/s")),
+        ("prompt now", Pair::Dim, big_number(prompt_now, " tok/s")),
+        ("prompt peak", Pair::Dim, big_number(prompt_pk, " tok/s")),
     ];
     draw_stat_column(p, inner.y, inner.h, rx, rw, &rows);
 }
