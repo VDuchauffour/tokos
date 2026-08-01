@@ -40,15 +40,19 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             use_cross: false
+            bin: tokos
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             use_cross: true
+            bin: tokos
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-14
             use_cross: false
+            bin: tokos
           - target: aarch64-apple-darwin
             os: macos-14
             use_cross: false
+            bin: tokos
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -70,7 +74,7 @@ jobs:
           cross build --release --target ${{ matrix.target }}
       - name: Package
         run: tar -C target/${{ matrix.target }}/release -czf tokos-${{ matrix.target }}.tar.gz
-          tokos
+          ${{ matrix.bin }}
       - name: Upload to release
         env:
           GH_TOKEN: ${{ github.token }}
