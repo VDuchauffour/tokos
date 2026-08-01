@@ -97,6 +97,10 @@ struct RunArgs {
 /// which take precedence over the defaults.
 #[derive(Parser, Clone)]
 struct MockServerArgs {
+    /// inference backend to emulate: vllm or sglang (env TOKOS_MOCK_BACKEND)
+    #[arg(long, env = "TOKOS_MOCK_BACKEND", value_parser = parse_mock_backend)]
+    backend: BackendKind,
+
     /// host address to bind the server to
     /// (env TOKOS_MOCK_HOST; default: 127.0.0.1)
     #[arg(long, env = "TOKOS_MOCK_HOST", default_value = "127.0.0.1")]
@@ -167,6 +171,7 @@ struct MockServerArgs {
 impl From<MockServerArgs> for mock_server::MockServerConfig {
     fn from(a: MockServerArgs) -> Self {
         Self {
+            backend: a.backend,
             host: a.host,
             port: a.port,
             model: a.model,
@@ -199,6 +204,18 @@ fn build_config(args: RunArgs) -> config::AppConfig {
 fn parse_backend(s: &str) -> Result<BackendKind, String> {
     BackendKind::parse(s)
         .ok_or_else(|| format!("invalid backend '{s}' (expected auto, vllm, or sglang)"))
+}
+
+/// Like [`parse_backend`] but rejects `auto` — the mock server must emulate a
+/// concrete backend.
+fn parse_mock_backend(s: &str) -> Result<BackendKind, String> {
+    match BackendKind::parse(s) {
+        Some(BackendKind::Auto) => {
+            Err("mock-server --backend must be 'vllm' or 'sglang' (not 'auto')".to_string())
+        }
+        Some(k) => Ok(k),
+        None => Err(format!("invalid backend '{s}' (expected vllm or sglang)")),
+    }
 }
 
 /// Run the default action: TUI or `--dump-json`.

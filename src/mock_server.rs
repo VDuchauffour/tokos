@@ -24,6 +24,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use log::{error, info};
 use serde_json::json;
 
+use crate::collectors::BackendKind;
+
 /// Default model name advertised by the mock server; shared by
 /// `MockServerConfig::default` and the `--model` CLI flag.
 pub const DEFAULT_MODEL: &str = "GLM-5.2";
@@ -32,6 +34,10 @@ pub const DEFAULT_MODEL: &str = "GLM-5.2";
 /// flags so the mental model transfers. Defaults match guidellm's defaults.
 #[derive(Clone, Debug)]
 pub struct MockServerConfig {
+    /// Which backend to emulate (`vllm` or `sglang`). Mandatory at the CLI
+    /// level; defaults to `Vllm` here so `MockServerConfig::default()` (used by
+    /// tests) stays valid.
+    pub backend: BackendKind,
     pub host: String,
     pub port: u16,
     pub model: String,
@@ -57,6 +63,7 @@ pub struct MockServerConfig {
 impl Default for MockServerConfig {
     fn default() -> Self {
         Self {
+            backend: BackendKind::Vllm,
             host: "127.0.0.1".to_string(),
             port: 8000,
             model: DEFAULT_MODEL.to_string(),
@@ -91,6 +98,19 @@ const INTER_TOKEN_BUCKETS: &[f64] = &[
 const TOKEN_BUCKETS: &[f64] = &[
     1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
     50000.0,
+];
+
+// --- SGLang bucket boundaries (copied from the SGLang fixture) ---
+const SGL_TTFT_BUCKETS: &[f64] = &[
+    0.001, 0.005, 0.01, 0.02, 0.04, 0.06, 0.08, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
+    15.0, 20.0, 25.0, 30.0,
+];
+const SGL_E2E_BUCKETS: &[f64] = &[
+    0.3, 0.5, 0.8, 1.0, 1.5, 2.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0,
+];
+const SGL_TPOT_BUCKETS: &[f64] = &[
+    0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.75,
+    1.0, 2.5,
 ];
 
 /// One cumulative histogram accumulator.
@@ -150,11 +170,35 @@ impl HistAcc {
         writeln!(out, r#"{base}_count{lbl} {}"#, fmt_f64(self.count)).unwrap();
         writeln!(out, r#"{base}_sum{lbl} {}"#, fmt_f64(self.sum)).unwrap();
     }
+
+    /// Like [`render`](Self::render) but for SGLang histograms: no `engine`
+    /// label, `le` first in the bucket label set.
+    fn render_sgl(&self, out: &mut String, base: &str, help: &str, model: &str) {
+        let lbl = format!(r#"{{model_name="{model}"}}"#);
+        writeln!(out, "# HELP {base} {help}").unwrap();
+        writeln!(out, "# TYPE {base} histogram").unwrap();
+        for (i, &le) in self.bounds.iter().enumerate() {
+            writeln!(
+                out,
+                r#"{base}_bucket{{le="{le}",model_name="{model}"}} {}"#,
+                fmt_f64(self.buckets[i])
+            )
+            .unwrap();
+        }
+        writeln!(
+            out,
+            r#"{base}_bucket{{le="+Inf",model_name="{model}"}} {}"#,
+            fmt_f64(self.buckets[self.bounds.len()])
+        )
+        .unwrap();
+        writeln!(out, r#"{base}_count{lbl} {}"#, fmt_f64(self.count)).unwrap();
+        writeln!(out, r#"{base}_sum{lbl} {}"#, fmt_f64(self.sum)).unwrap();
+    }
 }
 
 /// Mutable metrics state shared between the HTTP handlers and the generate-traffic
 /// thread.
-struct State {
+struct VllmState {
     model: String,
     process_start_time: f64,
     prompt_tokens_total: f64,
@@ -177,7 +221,7 @@ struct State {
     decode_time: HistAcc,
 }
 
-impl State {
+impl VllmState {
     fn new(model: String) -> Self {
         let start = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -206,6 +250,57 @@ impl State {
             decode_time: HistAcc::new(E2E_BUCKETS),
         }
     }
+}
+
+/// SGLang-specific metrics state. SGLang exposes a subset of vLLM's metrics
+/// under a `sglang:` prefix with a simpler label set (no `engine` label).
+struct SglState {
+    model: String,
+    process_start_time: f64,
+    prompt_tokens_total: f64,
+    generation_tokens_total: f64,
+    num_running_reqs: f64,
+    num_queue_reqs: f64,
+    cache_hit_rate: f64,
+    token_usage: f64,
+    num_used_tokens: f64,
+    gen_throughput: f64,
+    ttft: HistAcc,
+    e2e: HistAcc,
+    /// time_per_output_token (SGLang's inter-token latency histogram).
+    tpot: HistAcc,
+}
+
+impl SglState {
+    fn new(model: String) -> Self {
+        let start = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
+        Self {
+            model,
+            process_start_time: start,
+            prompt_tokens_total: 0.0,
+            generation_tokens_total: 0.0,
+            num_running_reqs: 0.0,
+            num_queue_reqs: 0.0,
+            cache_hit_rate: 0.0,
+            token_usage: 0.0,
+            num_used_tokens: 0.0,
+            gen_throughput: 0.0,
+            ttft: HistAcc::new(SGL_TTFT_BUCKETS),
+            e2e: HistAcc::new(SGL_E2E_BUCKETS),
+            tpot: HistAcc::new(SGL_TPOT_BUCKETS),
+        }
+    }
+}
+
+/// Backend-dispatched metrics state. Created in [`run`] from
+/// [`MockServerConfig::backend`]; [`render_metrics`] and
+/// [`simulate_request_with`] match on the variant to pick the right renderer.
+enum BackendState {
+    Vllm(Box<VllmState>),
+    Sgl(Box<SglState>),
 }
 
 /// Simple deterministic pseudo-random generator (LCG) so we need no `rand`
@@ -250,14 +345,26 @@ impl Rng {
 
 /// Simulate one completed request: bump counters and record histogram
 /// observations derived from the configured latency profile.
-fn simulate_request(state: &Mutex<State>, config: &MockServerConfig) -> (u32, u32) {
+fn simulate_request(state: &Mutex<BackendState>, config: &MockServerConfig) -> (u32, u32) {
     let mut rng = Rng::new();
     simulate_request_with(&mut rng, state, config)
 }
 
 fn simulate_request_with(
     rng: &mut Rng,
-    state: &Mutex<State>,
+    state: &Mutex<BackendState>,
+    config: &MockServerConfig,
+) -> (u32, u32) {
+    let mut s = state.lock().expect("metrics state lock poisoned");
+    match &mut *s {
+        BackendState::Vllm(vs) => simulate_vllm_request_with(rng, vs, config),
+        BackendState::Sgl(ss) => simulate_sgl_request_with(rng, ss, config),
+    }
+}
+
+fn simulate_vllm_request_with(
+    rng: &mut Rng,
+    state: &mut VllmState,
     config: &MockServerConfig,
 ) -> (u32, u32) {
     let prompt_tokens = (rng.normal(256.0, 128.0) as u32).max(1);
@@ -273,34 +380,72 @@ fn simulate_request_with(
     let queue_s = rng.normal(0.2, 0.1);
     let e2e_s = ttft_s + prefill_s + decode_s;
 
-    let mut s = state.lock().expect("metrics state lock poisoned");
-    s.prompt_tokens_total += prompt_tokens as f64;
-    s.generation_tokens_total += output_tokens as f64;
-    s.prefix_cache_queries_total += prompt_tokens as f64;
-    // Simulate a ~30% prefix-cache hit rate.
+    state.prompt_tokens_total += prompt_tokens as f64;
+    state.generation_tokens_total += output_tokens as f64;
+    state.prefix_cache_queries_total += prompt_tokens as f64;
     let hits = prompt_tokens as f64 * 0.3;
-    s.prefix_cache_hits_total += hits;
-    s.prompt_tokens_cached_total += hits;
-    s.request_success_total += 1.0;
-    // Keep KV-cache usage wobbling so the gauge chart moves.
-    s.kv_cache_usage_perc = (s.kv_cache_usage_perc + rng.normal(0.05, 0.03)).clamp(0.0, 0.95);
-    s.num_requests_running = rng.normal(2.0, 1.0).round().max(0.0);
-    s.num_requests_waiting = rng.normal(1.0, 1.0).round().max(0.0);
+    state.prefix_cache_hits_total += hits;
+    state.prompt_tokens_cached_total += hits;
+    state.request_success_total += 1.0;
+    state.kv_cache_usage_perc =
+        (state.kv_cache_usage_perc + rng.normal(0.05, 0.03)).clamp(0.0, 0.95);
+    state.num_requests_running = rng.normal(2.0, 1.0).round().max(0.0);
+    state.num_requests_waiting = rng.normal(1.0, 1.0).round().max(0.0);
 
-    s.ttft.observe(ttft_s);
-    s.inter_token.observe(itl_s);
-    s.e2e.observe(e2e_s);
-    s.queue_time.observe(queue_s);
-    s.prefill_time.observe(prefill_s);
-    s.decode_time.observe(decode_s);
-    s.req_prompt_tokens.observe(prompt_tokens as f64);
-    s.req_gen_tokens.observe(output_tokens as f64);
+    state.ttft.observe(ttft_s);
+    state.inter_token.observe(itl_s);
+    state.e2e.observe(e2e_s);
+    state.queue_time.observe(queue_s);
+    state.prefill_time.observe(prefill_s);
+    state.decode_time.observe(decode_s);
+    state.req_prompt_tokens.observe(prompt_tokens as f64);
+    state.req_gen_tokens.observe(output_tokens as f64);
 
     (prompt_tokens, output_tokens)
 }
 
-fn render_metrics(state: &Mutex<State>) -> String {
+fn simulate_sgl_request_with(
+    rng: &mut Rng,
+    state: &mut SglState,
+    config: &MockServerConfig,
+) -> (u32, u32) {
+    let prompt_tokens = (rng.normal(256.0, 128.0) as u32).max(1);
+    let output_tokens = {
+        let n = rng.normal(config.output_tokens as f64, config.output_tokens_std) as u32;
+        n.max(1)
+    };
+
+    let ttft_s = rng.normal(config.ttft_ms / 1000.0, config.ttft_ms_std / 1000.0);
+    let itl_s = rng.normal(config.itl_ms / 1000.0, config.itl_ms_std / 1000.0);
+    let decode_s = itl_s * output_tokens as f64;
+    let prefill_s = (prompt_tokens as f64 * 1e-4).max(0.001);
+    let e2e_s = ttft_s + prefill_s + decode_s;
+
+    state.prompt_tokens_total += prompt_tokens as f64;
+    state.generation_tokens_total += output_tokens as f64;
+    state.num_running_reqs = rng.normal(2.0, 1.0).round().max(0.0);
+    state.num_queue_reqs = rng.normal(1.0, 1.0).round().max(0.0);
+    state.cache_hit_rate = (state.cache_hit_rate + rng.normal(0.01, 0.02)).clamp(0.0, 0.95);
+    state.token_usage = (state.token_usage + rng.normal(0.01, 0.02)).clamp(0.0, 0.95);
+    state.num_used_tokens += output_tokens as f64;
+    state.gen_throughput = rng.normal(80.0, 20.0).max(0.0);
+
+    state.ttft.observe(ttft_s);
+    state.e2e.observe(e2e_s);
+    state.tpot.observe(itl_s);
+
+    (prompt_tokens, output_tokens)
+}
+
+fn render_metrics(state: &Mutex<BackendState>) -> String {
     let s = state.lock().expect("metrics state lock poisoned");
+    match &*s {
+        BackendState::Vllm(vs) => render_vllm_metrics(vs),
+        BackendState::Sgl(ss) => render_sgl_metrics(ss),
+    }
+}
+
+fn render_vllm_metrics(s: &VllmState) -> String {
     let model = &s.model;
     let lbl = format!(r#"{{engine="0",model_name="{model}"}}"#);
     let mut out = String::with_capacity(8 * 1024);
@@ -438,6 +583,70 @@ fn render_metrics(state: &Mutex<State>) -> String {
     out
 }
 
+fn render_sgl_metrics(s: &SglState) -> String {
+    let model = &s.model;
+    let lbl = format!(r#"{{model_name="{model}"}}"#);
+    let mut out = String::with_capacity(8 * 1024);
+
+    writeln!(
+        out,
+        "# HELP process_start_time_seconds Start time of the process since unix epoch in seconds."
+    )
+    .unwrap();
+    writeln!(out, "# TYPE process_start_time_seconds gauge").unwrap();
+    writeln!(
+        out,
+        "process_start_time_seconds {}",
+        fmt_f64(s.process_start_time)
+    )
+    .unwrap();
+
+    let counters: &[(&str, f64)] = &[
+        ("sglang:prompt_tokens_total", s.prompt_tokens_total),
+        ("sglang:generation_tokens_total", s.generation_tokens_total),
+    ];
+    for &(name, value) in counters {
+        writeln!(out, "# HELP {name} mock SGLang metric.").unwrap();
+        writeln!(out, "# TYPE {name} counter").unwrap();
+        writeln!(out, "{name}{lbl} {}", fmt_f64(value)).unwrap();
+    }
+
+    let gauges: &[(&str, f64)] = &[
+        ("sglang:num_running_reqs", s.num_running_reqs),
+        ("sglang:num_queue_reqs", s.num_queue_reqs),
+        ("sglang:cache_hit_rate", s.cache_hit_rate),
+        ("sglang:token_usage", s.token_usage),
+        ("sglang:num_used_tokens", s.num_used_tokens),
+        ("sglang:gen_throughput", s.gen_throughput),
+    ];
+    for &(name, value) in gauges {
+        writeln!(out, "# HELP {name} mock SGLang metric.").unwrap();
+        writeln!(out, "# TYPE {name} gauge").unwrap();
+        writeln!(out, "{name}{lbl} {}", fmt_f64(value)).unwrap();
+    }
+
+    s.ttft.render_sgl(
+        &mut out,
+        "sglang:time_to_first_token_seconds",
+        "Histogram of time to first token in seconds.",
+        model,
+    );
+    s.e2e.render_sgl(
+        &mut out,
+        "sglang:e2e_request_latency_seconds",
+        "Histogram of End-to-end request latency in seconds",
+        model,
+    );
+    s.tpot.render_sgl(
+        &mut out,
+        "sglang:time_per_output_token_seconds",
+        "Histogram of time per output token in seconds.",
+        model,
+    );
+
+    out
+}
+
 /// Initialize the global logger. Delegates to [`crate::logging::init`] with a
 /// fixed `info` level on stderr; pass `no_color = true` to emit plain
 /// (uncolored) output. `log::info!`/`log::error!` calls in this module are
@@ -478,7 +687,12 @@ pub fn run(config: MockServerConfig) -> std::process::ExitCode {
         }
     };
 
-    let state = Arc::new(Mutex::new(State::new(config.model.clone())));
+    let state = Arc::new(Mutex::new(match config.backend {
+        BackendKind::Vllm | BackendKind::Auto => {
+            BackendState::Vllm(Box::new(VllmState::new(config.model.clone())))
+        }
+        BackendKind::Sgl => BackendState::Sgl(Box::new(SglState::new(config.model.clone()))),
+    }));
     let stop = Arc::new(AtomicBool::new(false));
 
     if config.generate_traffic {
@@ -506,8 +720,11 @@ pub fn run(config: MockServerConfig) -> std::process::ExitCode {
     }
 
     info!(
-        "listening on http://{} (model={}, generate_traffic={})",
-        addr, config.model, config.generate_traffic
+        "listening on http://{} (backend={}, model={}, generate_traffic={})",
+        addr,
+        config.backend.as_str(),
+        config.model,
+        config.generate_traffic
     );
 
     for stream in listener.incoming() {
@@ -530,7 +747,7 @@ pub fn run(config: MockServerConfig) -> std::process::ExitCode {
 /// Handle a single HTTP/1.1 connection.
 fn handle_connection(
     mut stream: TcpStream,
-    state: &Arc<Mutex<State>>,
+    state: &Arc<Mutex<BackendState>>,
     config: &MockServerConfig,
 ) -> std::io::Result<()> {
     // Read the request line + headers (up to \r\n\r\n), cap at 64 KiB.
@@ -589,7 +806,7 @@ fn handle_connection(
 fn route(
     method: &str,
     path: &str,
-    state: &Arc<Mutex<State>>,
+    state: &Arc<Mutex<BackendState>>,
     config: &MockServerConfig,
 ) -> (u16, &'static str, String) {
     if method == "OPTIONS" {
@@ -705,17 +922,26 @@ fn send_chat_completion(host: &str, port: u16, model: &str) -> std::io::Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::collectors::vllm::parse_metrics;
+    use crate::collectors::sglang;
+    use crate::collectors::vllm;
 
-    fn state_with(model: &str) -> Arc<Mutex<State>> {
-        Arc::new(Mutex::new(State::new(model.to_string())))
+    fn vllm_state_with(model: &str) -> Arc<Mutex<BackendState>> {
+        Arc::new(Mutex::new(BackendState::Vllm(Box::new(VllmState::new(
+            model.to_string(),
+        )))))
+    }
+
+    fn sgl_state_with(model: &str) -> Arc<Mutex<BackendState>> {
+        Arc::new(Mutex::new(BackendState::Sgl(Box::new(SglState::new(
+            model.to_string(),
+        )))))
     }
 
     #[test]
-    fn empty_state_round_trips() {
-        let st = state_with(DEFAULT_MODEL);
+    fn vllm_empty_state_round_trips() {
+        let st = vllm_state_with(DEFAULT_MODEL);
         let text = render_metrics(&st);
-        let snap = parse_metrics(&text);
+        let snap = vllm::parse_metrics(&text);
         assert!(snap.reachable);
         assert_eq!(snap.model_name.as_deref(), Some(DEFAULT_MODEL));
         assert_eq!(snap.request_success_total, 0.0);
@@ -740,7 +966,7 @@ mod tests {
     }
 
     #[test]
-    fn simulated_requests_round_trip() {
+    fn vllm_simulated_requests_round_trip() {
         let cfg = MockServerConfig {
             request_latency: 0.0,
             ttft_ms: 150.0,
@@ -748,14 +974,13 @@ mod tests {
             output_tokens: 128,
             ..MockServerConfig::default()
         };
-        let st = state_with(&cfg.model.clone());
-        // Drive several simulated requests.
+        let st = vllm_state_with(&cfg.model.clone());
         let mut rng = Rng::new();
         for _ in 0..10 {
             simulate_request_with(&mut rng, &st, &cfg);
         }
         let text = render_metrics(&st);
-        let snap = parse_metrics(&text);
+        let snap = vllm::parse_metrics(&text);
 
         assert!(snap.reachable);
         assert_eq!(snap.model_name.as_deref(), Some(DEFAULT_MODEL));
@@ -763,7 +988,6 @@ mod tests {
         assert!(snap.prompt_tokens_total > 0.0);
         assert!(snap.generation_tokens_total > 0.0);
 
-        // Every histogram must have count > 0 and +Inf bucket == count.
         for h in [
             &snap.ttft,
             &snap.inter_token,
@@ -785,6 +1009,61 @@ mod tests {
         assert_eq!(snap.engine_awake, Some(true));
         assert_eq!(snap.cache_dtype.as_deref(), Some("auto"));
         assert_eq!(snap.block_size.as_deref(), Some("16"));
+    }
+
+    #[test]
+    fn sglang_empty_state_round_trips() {
+        let st = sgl_state_with(DEFAULT_MODEL);
+        let text = render_metrics(&st);
+        let snap = sglang::parse_metrics(&text);
+        assert!(snap.reachable);
+        assert_eq!(snap.model_name.as_deref(), Some(DEFAULT_MODEL));
+        assert_eq!(snap.prompt_tokens_total, 0.0);
+        assert_eq!(snap.generation_tokens_total, 0.0);
+        assert_eq!(snap.num_requests_running, 0.0);
+        assert_eq!(snap.num_requests_waiting, 0.0);
+        for h in [&snap.ttft, &snap.e2e, &snap.inter_token] {
+            assert_eq!(h.count, 0.0);
+            assert_eq!(h.get(f64::INFINITY), 0.0);
+        }
+        assert!(snap.process_start_time.is_some());
+        // SGLang doesn't expose these.
+        assert_eq!(snap.kv_cache_usage_perc, 0.0);
+        assert!(snap.cache_dtype.is_none());
+        assert!(snap.engine_awake.is_none());
+    }
+
+    #[test]
+    fn sglang_simulated_requests_round_trip() {
+        let cfg = MockServerConfig {
+            backend: BackendKind::Sgl,
+            request_latency: 0.0,
+            ttft_ms: 150.0,
+            itl_ms: 10.0,
+            output_tokens: 128,
+            ..MockServerConfig::default()
+        };
+        let st = sgl_state_with(&cfg.model.clone());
+        let mut rng = Rng::new();
+        for _ in 0..10 {
+            simulate_request_with(&mut rng, &st, &cfg);
+        }
+        let text = render_metrics(&st);
+        let snap = sglang::parse_metrics(&text);
+
+        assert!(snap.reachable);
+        assert_eq!(snap.model_name.as_deref(), Some(DEFAULT_MODEL));
+        assert!(snap.prompt_tokens_total > 0.0);
+        assert!(snap.generation_tokens_total > 0.0);
+
+        for h in [&snap.ttft, &snap.e2e, &snap.inter_token] {
+            assert!(h.count > 0.0, "histogram count should be > 0");
+            assert_eq!(
+                h.get(f64::INFINITY),
+                h.count,
+                "+Inf bucket must equal count"
+            );
+        }
     }
 
     #[test]
