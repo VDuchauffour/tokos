@@ -24,6 +24,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use log::{error, info};
 use serde_json::json;
 
+/// Default model name advertised by the mock server; shared by
+/// `MockServerConfig::default` and the `--model` CLI flag.
+pub const DEFAULT_MODEL: &str = "GLM-5.2";
+
 /// Configuration for the mock server, mirrored on the guidellm `mock-server`
 /// flags so the mental model transfers. Defaults match guidellm's defaults.
 #[derive(Clone, Debug)]
@@ -55,7 +59,7 @@ impl Default for MockServerConfig {
         Self {
             host: "127.0.0.1".to_string(),
             port: 8000,
-            model: "llama-3.1-8b-instruct".to_string(),
+            model: DEFAULT_MODEL.to_string(),
             request_latency: 3.0,
             request_latency_std: 0.0,
             ttft_ms: 150.0,
@@ -709,11 +713,11 @@ mod tests {
 
     #[test]
     fn empty_state_round_trips() {
-        let st = state_with("llama-3.1-8b-instruct");
+        let st = state_with(DEFAULT_MODEL);
         let text = render_metrics(&st);
         let snap = parse_metrics(&text);
         assert!(snap.reachable);
-        assert_eq!(snap.model_name.as_deref(), Some("llama-3.1-8b-instruct"));
+        assert_eq!(snap.model_name.as_deref(), Some(DEFAULT_MODEL));
         assert_eq!(snap.request_success_total, 0.0);
         assert_eq!(snap.prompt_tokens_total, 0.0);
         assert_eq!(snap.generation_tokens_total, 0.0);
@@ -754,7 +758,7 @@ mod tests {
         let snap = parse_metrics(&text);
 
         assert!(snap.reachable);
-        assert_eq!(snap.model_name.as_deref(), Some("llama-3.1-8b-instruct"));
+        assert_eq!(snap.model_name.as_deref(), Some(DEFAULT_MODEL));
         assert!(snap.request_success_total > 0.0);
         assert!(snap.prompt_tokens_total > 0.0);
         assert!(snap.generation_tokens_total > 0.0);

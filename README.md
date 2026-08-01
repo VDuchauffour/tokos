@@ -37,7 +37,7 @@ tokos --dump-json
 tokos run --url http://localhost:8000 --dump-json
 
 # Start a mock vLLM server (serves /metrics, /v1/models, /v1/chat/completions)
-tokos mock-server --port 8000 --model llama-3.1-8b-instruct
+tokos mock-server --port 8000 --model GLM-5.2
 
 # Drive the mock with synthetic traffic so the TUI shows live movement
 tokos mock-server --port 8000 --auto-traffic

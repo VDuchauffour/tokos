@@ -12,6 +12,7 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::config::{DEFAULT_INTERVAL, DEFAULT_URL};
 use crate::logging::LogFormat;
+use crate::mock_server::DEFAULT_MODEL;
 
 mod cli;
 mod collectors;
@@ -95,7 +96,7 @@ struct MockServerArgs {
     port: u16,
 
     /// name of the model to mock
-    #[arg(long, default_value = "llama-3.1-8b-instruct")]
+    #[arg(long, default_value = DEFAULT_MODEL)]
     model: String,
 
     /// base request latency in seconds for non-streaming responses
