@@ -6,6 +6,14 @@ A lightweight terminal UI for real-time monitoring of inference server metrics.
 
 Supports [vLLM](https://github.com/vllm-project/vllm) and [SGLang](https://github.com/sgl-project/sglang) via their Prometheus `/metrics` endpoints.
 
+## Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/VDuchauffour/tokos/main/install.sh | bash
+```
+
+You can also install with `cargo install tokos`
+
 ## Features
 
 - **Real-time TUI** — btop-style dashboard with braille charts
@@ -13,14 +21,6 @@ Supports [vLLM](https://github.com/vllm-project/vllm) and [SGLang](https://githu
 - **Live request feed** — tail a log file or `docker logs -f`
 - **Headless JSON** — `--dump-json` for scripting and CI
 - **Mock server** — `mock-server --generate-traffic` for testing without a deployment
-
-## Install
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/VDuchauffour/tokos/main/install.sh | bash
-```
-
-or `cargo install tokos` · [binaries](https://github.com/VDuchauffour/tokos/releases)
 
 ## Usage
 
