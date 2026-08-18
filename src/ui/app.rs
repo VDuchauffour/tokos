@@ -376,7 +376,7 @@ impl App {
     }
 
     fn draw_help_bar(&self, p: &mut Painter<'_>, y: i32, cols: i32) {
-        let keys = " p:pause | +/-:speed | b:backend | Tab:focus | 1-4:panel | h:help | q:quit ";
+        let keys = " p:pause | +/-:speed | b:backend | Tab:focus | 1-4:panel | h/?:help | q:quit ";
         p.text(y, 0, keys, p.theme.attr(Pair::Dim, false, false));
         let name = FOCUS_ORDER.get(self.focused).copied().unwrap_or("");
         let label = format!(" {name} ");
@@ -386,22 +386,22 @@ impl App {
 
     fn draw_help(&self, p: &mut Painter<'_>, lines: i32, cols: i32) {
         let body: Vec<String> = vec![
-            "tokos — keybindings".to_string(),
-            String::new(),
-            "  q / Esc    quit".to_string(),
-            "  + / -      faster / slower refresh".to_string(),
-            "  p          pause / resume polling".to_string(),
-            "  b          cycle backend (auto → vllm → sglang)".to_string(),
-            "  Tab        cycle focus to the next panel".to_string(),
-            "  1 - 4      focus panel by number".to_string(),
-            "  h / ?      toggle this help".to_string(),
-            String::new(),
-            "  (all panels are always visible; Tab cycles focus)".to_string(),
+            "keybindings".to_string(),
+            " q / Esc    quit".to_string(),
+            " + / -      faster / slower refresh".to_string(),
+            " p          pause / resume polling".to_string(),
+            " b          cycle backend (auto → vllm → sglang)".to_string(),
+            " Tab        cycle focus to the next panel".to_string(),
+            " 1 - 4      focus panel by number".to_string(),
+            " h / ?      toggle this help".to_string(),
             String::new(),
             "press any key to close".to_string(),
         ];
-        let bw = body.iter().map(|s| s.chars().count()).max().unwrap_or(0) + 4;
-        let bh = body.len() + 2;
+        // Size the overlay to fit the text exactly (plus the box border),
+        // clamped to the terminal size.
+        let longest = body.iter().map(|s| s.chars().count()).max().unwrap_or(0);
+        let bw = (longest + 4).min(cols as usize);
+        let bh = (body.len() + 2).min(lines as usize);
         let y0 = ((lines - bh as i32) / 2).max(0);
         let x0 = ((cols - bw as i32) / 2).max(0);
 
@@ -418,17 +418,15 @@ impl App {
             "",
             Pair::Div,
         );
+
+        let tx = inner.x + 1;
+        let ty = inner.y;
         for (i, s) in body.iter().enumerate() {
             if i as i32 >= inner.h {
                 break;
             }
             let pair = if i == 0 { Pair::Title } else { Pair::Dim };
-            p.text(
-                inner.y + i as i32,
-                inner.x + 1,
-                s,
-                p.theme.attr(pair, false, false),
-            );
+            p.text(ty + i as i32, tx, s, p.theme.attr(pair, false, false));
         }
     }
 }
