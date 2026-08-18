@@ -33,6 +33,7 @@ pub struct Painter<'a> {
     width: u16,
     height: u16,
     pub theme: &'a Theme,
+    pub focused: bool,
 }
 
 impl<'a> Painter<'a> {
@@ -42,6 +43,7 @@ impl<'a> Painter<'a> {
             width: area.width,
             height: area.height,
             theme,
+            focused: false,
         }
     }
 
@@ -75,7 +77,11 @@ impl<'a> Painter<'a> {
         if h < 2 || w < 2 {
             return Rect::new(y, x, 0, 0);
         }
-        let border = self.theme.attr(border_pair, false, false);
+        let border = if self.focused {
+            self.theme.attr(Pair::Focus, true, false)
+        } else {
+            self.theme.attr(border_pair, false, false)
+        };
 
         let line = H_BAR.repeat((w - 2) as usize);
         self.text(y, x, &format!("{ROUND_LU}{line}{ROUND_RU}"), border);

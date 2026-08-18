@@ -26,6 +26,7 @@ pub enum Pair {
     Purple,
     Pink,
     Prompt,
+    Focus,
 }
 
 fn palette(pair: Pair) -> Option<Color> {
@@ -48,6 +49,7 @@ fn palette(pair: Pair) -> Option<Color> {
         Pair::Purple => Color::Blue,
         Pair::Pink => Color::Magenta,
         Pair::Prompt => Color::Yellow,
+        Pair::Focus => Color::White,
     };
     Some(color)
 }

@@ -3,9 +3,10 @@
 //! [`Poller`] runs in a daemon thread, scraping vLLM `/metrics` at the
 //! configured interval, storing the latest snapshot under a lock. The main
 //! thread loops at a faster tick (250 ms), reading the latest snapshot,
-//! deriving rates from the [`History`], and redrawing the active view's
-//! panels. Views are switched with `1`-`N` (or `Tab`); each is a fixed layout
-//! tree defined in [`crate::ui::views`].
+//! deriving rates from the [`History`], and redrawing the persistent layout's
+//! panels. All panels are always visible; `Tab` cycles focus between them and
+//! `1`-`4` jump to a panel by number. The layout tree is defined in
+//! [`crate::ui::views`].
 
 use std::collections::HashSet;
 use std::io::{self, Stdout};
@@ -30,14 +31,18 @@ use crate::ui::layout::compute_layout;
 use crate::ui::panels::Painter;
 use crate::ui::registry::{REGISTRY, find_panel};
 use crate::ui::theme::{Pair, Theme};
-use crate::ui::views::VIEWS;
+use crate::ui::views::LAYOUT;
 
 /// Render tick: how often the UI wakes to handle input / redraw (seconds).
 const RENDER_TICK_MS: u64 = 250;
 const MIN_INTERVAL: f64 = 0.2;
 const MAX_INTERVAL: f64 = 10.0;
-/// How long (seconds) the view-name toast stays up after switching views.
+/// How long (seconds) the backend-name toast stays up after swapping backends.
 const TOAST_SECONDS: f64 = 1.5;
+/// Canonical ordering for Tab focus cycling and the `1`-`4` jump keys. Matches
+/// the visual layout: loadavg (top-left), throughput (top-right-top), perf
+/// (top-right-bottom), requests (bottom).
+const FOCUS_ORDER: &[&str] = &["loadavg", "throughput", "perf", "requests"];
 
 struct PollerState {
     latest: Mutex<Option<Snapshot>>,
@@ -174,8 +179,7 @@ pub struct App {
     poller: Poller,
     show_help: bool,
     last: Option<Snapshot>,
-    active_view: usize,
-    toast_until: f64,
+    focused: usize,
     last_kind_epoch: usize,
     backend_toast_until: f64,
 }
@@ -200,8 +204,7 @@ impl App {
             poller,
             show_help: false,
             last: None,
-            active_view: 0,
-            toast_until: 0.0,
+            focused: 0,
             last_kind_epoch: 0,
             backend_toast_until: 0.0,
         }
@@ -293,10 +296,16 @@ impl App {
                         .set_interval(MAX_INTERVAL.min(self.poller.interval() * 2.0));
                 }
                 KeyCode::Tab => {
-                    self.select_view((self.active_view + 1) % VIEWS.len());
+                    self.focused = (self.focused + 1) % FOCUS_ORDER.len();
                 }
-                KeyCode::Char(c) if ('1'..='9').contains(&c) => {
-                    self.select_view((c as u8 - b'1') as usize);
+                KeyCode::BackTab => {
+                    self.focused = (self.focused + FOCUS_ORDER.len() - 1) % FOCUS_ORDER.len();
+                }
+                KeyCode::Char(c) if ('1'..='4').contains(&c) => {
+                    let idx = (c as u8 - b'1') as usize;
+                    if idx < FOCUS_ORDER.len() {
+                        self.focused = idx;
+                    }
                 }
                 KeyCode::Char('b') => {
                     let next = match self.config.backend {
@@ -313,26 +322,17 @@ impl App {
         }
     }
 
-    fn select_view(&mut self, idx: usize) {
-        if idx >= VIEWS.len() || idx == self.active_view {
-            return;
-        }
-        self.active_view = idx;
-        self.toast_until = monotonic_now() + TOAST_SECONDS;
-    }
-
     fn draw(&self, frame: &mut Frame) {
         let area = frame.area();
         let lines = area.height as i32;
         let cols = area.width as i32;
-        let view = &VIEWS[self.active_view];
         let caps = self.available_caps();
-        let layout = compute_layout(lines, cols, &view.root, &caps);
+        let layout = compute_layout(lines - 1, cols, &LAYOUT, &caps);
 
         let mut painter = Painter::new(frame.buffer_mut(), area, &self.theme);
 
         if layout.too_small {
-            let msg = "terminal too small — resize to at least 62x20";
+            let msg = "terminal too small — resize to at least 62x21";
             let x = ((cols - msg.chars().count() as i32) / 2).max(0);
             painter.text(
                 lines / 2,
@@ -346,9 +346,12 @@ impl App {
         let default_snap = Snapshot::new(monotonic_now(), BackendSnapshot::default());
         let snap = self.last.as_ref().unwrap_or(&default_snap);
 
-        for (pid, rect) in &layout.panels {
-            if let Some(panel) = find_panel(pid) {
-                (panel.draw)(&mut painter, *rect, snap, &self.history, 0);
+        for (i, pid) in FOCUS_ORDER.iter().enumerate() {
+            if let Some(rect) = layout.panels.get(*pid)
+                && let Some(panel) = find_panel(pid)
+            {
+                painter.focused = i == self.focused;
+                (panel.draw)(&mut painter, *rect, snap, &self.history, (i + 1) as i32);
             }
         }
 
@@ -358,32 +361,30 @@ impl App {
             painter.text(lines / 2, x, msg, self.theme.attr(Pair::Dim, false, true));
         }
 
-        if monotonic_now() < self.toast_until {
-            self.draw_toast(&mut painter, cols, view.name);
-        }
         if monotonic_now() < self.backend_toast_until {
             let label = format!(" backend: {} ", self.config.backend.as_str());
             let x = ((cols - label.chars().count() as i32) / 2).max(0);
             painter.text(1, x, &label, self.theme.attr(Pair::Hi, true, false));
         }
+
+        self.draw_help_bar(&mut painter, lines - 1, cols);
+
+        painter.focused = false;
         if self.show_help {
             self.draw_help(&mut painter, lines, cols);
         }
     }
 
-    fn draw_toast(&self, p: &mut Painter<'_>, cols: i32, name: &str) {
-        let label = format!(" {}/{}  {} ", self.active_view + 1, VIEWS.len(), name);
-        let x = ((cols - label.chars().count() as i32) / 2).max(0);
-        p.text(0, x, &label, self.theme.attr(Pair::Hi, true, false));
+    fn draw_help_bar(&self, p: &mut Painter<'_>, y: i32, cols: i32) {
+        let keys = " p:pause | +/-:speed | b:backend | Tab:focus | 1-4:panel | h:help | q:quit ";
+        p.text(y, 0, keys, p.theme.attr(Pair::Dim, false, false));
+        let name = FOCUS_ORDER.get(self.focused).copied().unwrap_or("");
+        let label = format!(" {name} ");
+        let x = (cols - label.chars().count() as i32).max(0);
+        p.text(y, x, &label, p.theme.attr(Pair::Title, true, false));
     }
 
     fn draw_help(&self, p: &mut Painter<'_>, lines: i32, cols: i32) {
-        let views: Vec<String> = VIEWS
-            .iter()
-            .enumerate()
-            .map(|(i, v)| format!("{} {}", i + 1, v.name))
-            .collect();
-        let views_joined = views.join("  ");
         let body: Vec<String> = vec![
             "tokos — keybindings".to_string(),
             String::new(),
@@ -391,12 +392,11 @@ impl App {
             "  + / -      faster / slower refresh".to_string(),
             "  p          pause / resume polling".to_string(),
             "  b          cycle backend (auto → vllm → sglang)".to_string(),
-            "  Tab        cycle to the next view".to_string(),
-            format!("  1 - {}      switch view", VIEWS.len()),
+            "  Tab        cycle focus to the next panel".to_string(),
+            "  1 - 4      focus panel by number".to_string(),
             "  h / ?      toggle this help".to_string(),
             String::new(),
-            format!("Views: {views_joined}"),
-            "  (panels unavailable on this host drop out automatically)".to_string(),
+            "  (all panels are always visible; Tab cycles focus)".to_string(),
             String::new(),
             "press any key to close".to_string(),
         ];

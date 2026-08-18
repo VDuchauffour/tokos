@@ -182,7 +182,7 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
-    use crate::ui::{registry::REGISTRY, views::VIEWS};
+    use crate::ui::{registry::REGISTRY, views::LAYOUT};
 
     fn all_panels() -> HashSet<&'static str> {
         REGISTRY.iter().map(|p| p.id).collect()
@@ -230,7 +230,7 @@ mod tests {
     fn unavailable_panel_reflows_to_fill() {
         let mut avail = all_panels();
         avail.remove("perf");
-        let lay = compute_layout(40, 120, &VIEWS[0].root, &avail);
+        let lay = compute_layout(40, 120, &LAYOUT, &avail);
         assert!(!lay.panels.contains_key("perf"));
         let ys = lay.panels.values().map(|r| r.y).min().unwrap();
         assert_eq!(ys, 0);
@@ -238,13 +238,13 @@ mod tests {
 
     #[test]
     fn too_small_flags() {
-        let lay = compute_layout(MIN_LINES - 1, MIN_COLS - 1, &VIEWS[0].root, &all_panels());
+        let lay = compute_layout(MIN_LINES - 1, MIN_COLS - 1, &LAYOUT, &all_panels());
         assert!(lay.too_small);
         assert!(lay.panels.is_empty());
     }
 
     #[test]
-    fn views_only_reference_registered_panels() {
+    fn layout_only_references_registered_panels() {
         fn panels_in(node: &Node) -> HashSet<&'static str> {
             match node.panel {
                 Some(p) => {
@@ -256,8 +256,6 @@ mod tests {
             }
         }
         let all = all_panels();
-        for view in VIEWS.iter() {
-            assert!(panels_in(&view.root).is_subset(&all), "{}", view.name);
-        }
+        assert!(panels_in(&LAYOUT).is_subset(&all));
     }
 }
