@@ -1,4 +1,6 @@
-# Oh-my-openagent local state / cache
+# Agents
+.agents/
+.claude/
 .omo/
 
 # Created by https://www.toptal.com/developers/gitignore/api/rust
