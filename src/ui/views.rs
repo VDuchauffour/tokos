@@ -1,62 +1,25 @@
-//! Built-in views: named layout trees over the panel registry.
+//! The single persistent layout tree: all panels always visible.
 //!
-//! Each view is a fixed arrangement the user cycles through with the number
-//! keys (`1`-`N`) or `Tab`.
+//! Arrangement: loadavg sidebar (left) beside a stacked main column
+//! (throughput over perf) on top; requests feed at the bottom.
 
 use std::sync::LazyLock;
 
 use crate::ui::layout::{Node, col, leaf, row};
 
-pub struct View {
-    pub name: &'static str,
-    pub root: Node,
-}
-
-// The default arrangement: throughput over the 1·5·15 averages, beside the
-// request feed (weight 3 of 5).
-fn overview() -> Node {
-    col(
-        vec![row(
-            vec![
-                col(vec![leaf("throughput", 3), leaf("loadavg", 2)], 1),
-                leaf("requests", 1),
-            ],
-            3,
-        )],
-        1,
-    )
-}
-
-// Load-average style 1/5/15-minute windows over the key metrics, with the live
-// throughput and latency charts beneath for context.
-fn rates() -> Node {
+/// The persistent layout: sidebar + stacked main on top, requests feed below.
+pub static LAYOUT: LazyLock<Node> = LazyLock::new(|| {
     col(
         vec![
-            leaf("loadavg", 3),
-            row(vec![leaf("throughput", 1), leaf("perf", 1)], 2),
+            row(
+                vec![
+                    leaf("loadavg", 1),
+                    col(vec![leaf("throughput", 1), leaf("perf", 1)], 2),
+                ],
+                4,
+            ),
+            leaf("requests", 2),
         ],
         1,
     )
-}
-
-// Request-feed focus: the live feed large, with a compact perf strip.
-fn requests() -> Node {
-    col(vec![leaf("requests", 3), leaf("perf", 2)], 1)
-}
-
-pub static VIEWS: LazyLock<Vec<View>> = LazyLock::new(|| {
-    vec![
-        View {
-            name: "overview",
-            root: overview(),
-        },
-        View {
-            name: "1·5·15",
-            root: rates(),
-        },
-        View {
-            name: "requests",
-            root: requests(),
-        },
-    ]
 });
