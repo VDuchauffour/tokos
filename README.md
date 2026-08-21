@@ -24,17 +24,17 @@ You can also install with `cargo install tokos`
 
 ## Usage
 
-`tokos` has three subcommands: `run` launches the TUI against a live
+`tokos` has three subcommands: `watch` launches the TUI against a live
 `/metrics` endpoint, `mock-server` starts a synthetic server for testing
 the TUI without a real deployment, and `completions` prints shell completion
 scripts. A subcommand is always required.
 
 ```sh
 # Launch the TUI
-tokos run --url http://localhost:8000
+tokos watch --url http://localhost:8000
 
 # Headless: collect two snapshots, print derived metrics as JSON, exit
-tokos run --url http://localhost:8000 --dump-json
+tokos watch --url http://localhost:8000 --dump-json
 
 # Start a mock vLLM server (serves /metrics, /v1/models, /v1/chat/completions)
 tokos mock-server --backend vllm --port 8000 --model GLM-5.2
@@ -42,7 +42,7 @@ tokos mock-server --backend vllm --port 8000 --model GLM-5.2
 # Start a mock SGLang server
 tokos mock-server --backend sglang --port 30000 --generate-traffic
 # in another terminal:
-tokos run --url http://127.0.0.1:30000
+tokos watch --url http://127.0.0.1:30000
 
 # Generate shell completions (auto-detects from $SHELL when no shell is given)
 tokos completions >/etc/bash_completion.d/tokos
@@ -50,7 +50,7 @@ tokos completions zsh >~/.zfunc/_tokos
 tokos completions fish >~/.config/fish/completions/tokos.fish
 ```
 
-Common `run` flags:
+Common `watch` flags:
 
 | Flag          | Env              | Default                 | Description                            |
 | ------------- | ---------------- | ----------------------- | -------------------------------------- |
@@ -84,9 +84,9 @@ env wins over default):
 ## Usage
 
 ```sh
-tokos run --url http://localhost:8000 # auto-detect backend (default)
-tokos run --url http://localhost:30000 --backend sglang
-tokos run --url http://localhost:8000 --backend vllm
+tokos watch --url http://localhost:8000 # auto-detect backend (default)
+tokos watch --url http://localhost:30000 --backend sglang
+tokos watch --url http://localhost:8000 --backend vllm
 ```
 
 | Flag          | Env              | Default                 | Description                                                         |

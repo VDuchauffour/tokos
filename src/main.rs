@@ -37,7 +37,7 @@ struct Cli {
 enum Command {
     /// Launch the terminal UI against a live inference backend `/metrics`
     /// endpoint.
-    Run(RunArgs),
+    Watch(WatchArgs),
 
     /// Start a mock inference server that serves a synthetic `/metrics`
     /// endpoint for testing `tokos` itself.
@@ -47,9 +47,9 @@ enum Command {
     Completions(CompletionsArgs),
 }
 
-/// Arguments for the `run` subcommand.
+/// Arguments for the `watch` subcommand.
 #[derive(Args, Clone)]
-struct RunArgs {
+struct WatchArgs {
     /// inference server base URL (env TOKOS_URL)
     #[arg(long, env = "TOKOS_URL", default_value = DEFAULT_URL)]
     url: String,
@@ -201,7 +201,7 @@ struct CompletionsArgs {
     shell: Option<Shell>,
 }
 
-fn build_config(args: RunArgs) -> config::AppConfig {
+fn build_config(args: WatchArgs) -> config::AppConfig {
     config::AppConfig {
         url: args.url,
         interval: args.interval.max(0.1),
@@ -230,8 +230,8 @@ fn parse_mock_backend(s: &str) -> Result<BackendKind, String> {
     }
 }
 
-/// Run the default action: TUI or `--dump-json`.
-fn run(args: RunArgs) -> ExitCode {
+/// Run the `watch` subcommand: TUI or `--dump-json`.
+fn watch(args: WatchArgs) -> ExitCode {
     let dump = args.dump_json;
     let log_level = args.log_level.clone();
     let trace_file = args.trace_file.clone();
@@ -284,7 +284,7 @@ fn completions(args: CompletionsArgs) -> ExitCode {
 fn main() -> ExitCode {
     let args = Cli::parse();
     match args.command {
-        Command::Run(r) => run(r),
+        Command::Watch(w) => watch(w),
         Command::MockServer(m) => mock_server::run(m.into()),
         Command::Completions(c) => completions(c),
     }
