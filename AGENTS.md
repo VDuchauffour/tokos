@@ -46,9 +46,9 @@ All dev tasks go through `just` (see `justfile`). Non-obvious points:
 
 ## Architecture
 
-Entry flow (`src/main.rs`): clap-derive `Cli` with three subcommands — `run`,
+Entry flow (`src/main.rs`): clap-derive `Cli` with three subcommands — `watch`,
 `mock-server`, and `completions` — none is the default, so a subcommand is
-always required. `run` dispatches to either headless `cli::dump_json` (collect
+always required. `watch` dispatches to either headless `cli::dump_json` (collect
 two snapshots, print JSON, exit, no TTY needed) or `ui::app::App::run` (TUI
 render loop). `mock-server` calls `mock_server::run`. `completions` prints
 shell completion scripts via `clap_complete::generate`.
@@ -60,12 +60,12 @@ Module ownership:
 - `src/cli.rs` — headless `--dump-json` path: `collect_pair()` (two snapshots
   `interval` apart) and `dump_json()` (serialize derived metrics, print, exit,
   no TTY). Also `cargo_styles()` for clap help styling.
-- `src/logging.rs` — tracing/tracing-subscriber init driven by `run`'s
+- `src/logging.rs` — tracing/tracing-subscriber init driven by `watch`'s
   `--log-level` / `--trace-file` / `--log-format` (text|json) flags; single
   sink (file or stderr), respects `RUST_LOG` via `EnvFilter`.
 - `src/collectors/` — `Backend` trait + impls: `vllm`, `sglang`,
   `access_log` (tails a log file or `docker logs -f`), `common` (shared
-  exposition-text parser + HTTP fetcher). `run`'s `--backend` flag
+  exposition-text parser + HTTP fetcher). `watch`'s `--backend` flag
   (`auto`/`vllm`/`sglang`, env `TOKOS_BACKEND`; default `auto`) selects the
   collector. `AutoCollector` sniffs the `vllm:` / `sglang:` metric-name prefix
   to pick the parser (falls back to vllm) and **re-probes every 30 polls**
